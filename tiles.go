@@ -18,6 +18,13 @@ type TileManager struct {
     lock sync.Mutex
 }
 
+func NewTileManager(numTiles int, client *redis.Client) *TileManager {
+    return &TileManager{
+        NumTiles: numTiles,
+        Client: client,
+    }
+}
+
 func(tm *TileManager) Lock(tile int, duration time.Duration) (error, int) {
     if tile >= tm.NumTiles {
         return errors.New("This tile is not available"), -1
@@ -49,7 +56,7 @@ func(tm *TileManager) GetState() []int {
     result := make([]int, tm.NumTiles)
     for i:=0; i < tm.NumTiles; i++ {
         val, err := tm.Client.Get(tm.keyForTile(i)).Result()
-        if err != nil {
+        if err != nil && err != redis.Nil {
             panic(err)
         }
         if val == "1" {
