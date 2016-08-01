@@ -25,6 +25,7 @@ var (
 	tileManager  *TileManager
 	Info         *log.Logger
 	Error        *log.Logger
+	RPCClient    *btcrpcclient.Client
 )
 
 const (
@@ -33,8 +34,42 @@ const (
 	N_ADS = 12
 )
 
-func TileHandler(w http.ResponseWriter, r *http.Request) {
-	states := tileManager.GetState()
+type UserDetails struct {
+	SessionId uuid.UUID
+	Keys      *KeyManager
+}
+
+type TileLockHandlerPayload struct {
+	FrameNumber int `json:"frame_number"`
+}
+
+func TileLockHandler(w http.ResponseWriter, r *http.Request, details *UserDetails) {
+	var data TileLockHandlerPayload
+	decoder := json.NewDecoder(r.Body)
+	err := decoder.Decode(&data)
+	if err != nil {
+		Error.Fatal(err)
+	}
+
+	err, res := tileManager.Lock(
+		data.FrameNumber, time.Minute*5, details.SessionId,
+	)
+	if err != nil {
+		Error.Fatal(err)
+	}
+
+	payload := make(map[string]int)
+	payload["State"] = res
+	encoder := json.NewEncoder(w)
+	err = encoder.Encode(payload)
+	if err != nil {
+		Error.Fatal(err)
+	}
+	w.Header().Set("Content-Type", "application/json")
+}
+
+func TileHandler(w http.ResponseWriter, r *http.Request, details *UserDetails) {
+	states := tileManager.GetState(details.SessionId)
 	encoder := json.NewEncoder(w)
 	err := encoder.Encode(states)
 	if err != nil {
@@ -42,42 +77,53 @@ func TileHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func AddressesHandler(w http.ResponseWriter, r *http.Request) {
+func AuthMiddleware(fn func(http.ResponseWriter, *http.Request, *UserDetails)) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
 
-	// Get cookies
-	uuidFetched := false
-	var uniqueIdentifier uuid.UUID
-	if cookie, err := r.Cookie("uuid"); err == nil {
-		value := make(map[string]string)
-		if err = secureCookie.Decode("uuid", cookie.Value, &value); err == nil {
-			uniqueIdentifier, err = uuid.FromString(value["uuid"])
-			if err != nil {
+		// Get cookies
+		uuidFetched := false
+		var uniqueIdentifier uuid.UUID
+		if cookie, err := r.Cookie("uuid"); err == nil {
+			value := make(map[string]string)
+			if err = secureCookie.Decode("uuid", cookie.Value, &value); err == nil {
+				uniqueIdentifier, err = uuid.FromString(value["uuid"])
+				if err != nil {
+					Error.Fatal(err)
+				}
+				uuidFetched = true
+			} else {
 				Error.Fatal(err)
 			}
-			uuidFetched = true
-		} else {
-			Error.Fatal(err)
 		}
-	}
 
-	if !uuidFetched {
-		uniqueIdentifier = uuid.NewV4()
-		value := map[string]string{
-			"uuid": uniqueIdentifier.String(),
+		if !uuidFetched {
+			uniqueIdentifier = uuid.NewV4()
+			value := map[string]string{
+				"uuid": uniqueIdentifier.String(),
+			}
+			if encoded, err := secureCookie.Encode("uuid", value); err == nil {
+				http.SetCookie(w, &http.Cookie{
+					Name:  "uuid",
+					Value: encoded,
+				})
+			} else {
+				Error.Fatal(err)
+			}
 		}
-		if encoded, err := secureCookie.Encode("uuid", value); err == nil {
-			http.SetCookie(w, &http.Cookie{
-				Name:  "uuid",
-				Value: encoded,
-			})
-		} else {
-			Error.Fatal(err)
+		manager := NewKeyManager(client, uniqueIdentifier)
+		details := &UserDetails{
+			SessionId: uniqueIdentifier,
+			Keys:      manager,
 		}
+
+		fn(w, r, details)
 	}
+}
+
+func AddressesHandler(w http.ResponseWriter, r *http.Request, details *UserDetails) {
 
 	// Get keypair
-	manager := NewKeyManager(client, uniqueIdentifier)
-	chain, err := manager.GetChain()
+	chain, err := details.Keys.GetChain()
 	if err != nil {
 		panic(err)
 	}
@@ -85,8 +131,11 @@ func AddressesHandler(w http.ResponseWriter, r *http.Request) {
 	pkeys := make([]string, N_ADS)
 	for i := 0; i < N_ADS; i++ {
 		acct, _ := chain.Child(uint32(i))
-		addr, _ := acct.Address(&chaincfg.MainNetParams)
+		addr, _ := acct.Address(&chaincfg.SimNetParams)
 		pkeys[i] = addr.EncodeAddress()
+
+		amount, _ := RPCClient.GetBalance(addr.EncodeAddress())
+		Info.Println(amount)
 	}
 
 	encoder := json.NewEncoder(w)
@@ -133,14 +182,15 @@ func main() {
 		Pass:         "admin",
 		Certificates: certs,
 	}
-	_, err = btcrpcclient.New(connCfg, &ntfnHandlers)
+	RPCClient, err = btcrpcclient.New(connCfg, &ntfnHandlers)
 	if err != nil {
 		Error.Fatal(err)
 	}
 
 	// address router
 	r := mux.NewRouter()
-	r.HandleFunc("/addresses", AddressesHandler)
-	r.HandleFunc("/tiles", TileHandler)
+	r.HandleFunc("/addresses", AuthMiddleware(AddressesHandler)).Methods("GET")
+	r.HandleFunc("/tiles", AuthMiddleware(TileHandler)).Methods("GET")
+	r.HandleFunc("/tile", AuthMiddleware(TileLockHandler)).Methods("POST")
 	Error.Fatal(http.ListenAndServe(":8000", r))
 }

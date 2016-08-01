@@ -23,7 +23,7 @@ func (k *KeyManager) GetChain() (*hdkeychain.ExtendedKey, error) {
 		return nil, err
 	}
 
-	ek, err := hdkeychain.NewMaster(masterKeyByteSlice, &chaincfg.MainNetParams)
+	ek, err := hdkeychain.NewMaster(masterKeyByteSlice, &chaincfg.SimNetParams)
 	if err != nil {
 		return nil, err
 	}
