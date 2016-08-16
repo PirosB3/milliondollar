@@ -6,10 +6,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"bytes"
 	"path/filepath"
 	"time"
 
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcrpcclient"
 	"github.com/btcsuite/btcutil"
@@ -26,21 +26,107 @@ var (
 	Info         *log.Logger
 	Error        *log.Logger
 	RPCClient    *btcrpcclient.Client
+        RootAddress  btcutil.Address
+        RootPage     []byte
 )
 
 const (
 	KEY_1 = "QQByVLj7UQHXmiWiHdV17HQQVLQXUjyB"
 	KEY_2 = "HHQULVBjVXQHVQQX1LB7yLiWjHLQ7dH1QyijByUVVHVmQmXQiWijdUQQQU77ByXQ"
 	N_ADS = 12
+        AD_COST = 2.0
 )
 
 type UserDetails struct {
 	SessionId uuid.UUID
-	Keys      *KeyManager
+	Keys      AddressGenerator
+}
+
+type AddressBalancePair struct {
+	Address string `json:"address"`
+	Balance float64 `json:"balance"`
 }
 
 type TileLockHandlerPayload struct {
 	FrameNumber int `json:"frame_number"`
+}
+
+type TilePurchaseHandlerPayload struct {
+	FrameNumber int `json:"frame_number"`
+        Message string  `json:"message"`
+}
+
+func RootHandler(w http.ResponseWriter, r *http.Request) {
+    reader := bytes.NewReader(RootPage)
+    _, err := reader.WriteTo(w)
+    if err != nil {
+        Error.Fatal(err)
+    }
+}
+
+func ResponseByReturnHandler(
+    fn func(http.ResponseWriter, *http.Request, *UserDetails) (int, interface{}),
+) func(http.ResponseWriter, *http.Request, *UserDetails) {
+    return func(w http.ResponseWriter, r *http.Request, details *UserDetails) {
+
+        statusCode, data := fn(w, r, details)
+        w.WriteHeader(statusCode)
+
+        writer := json.NewEncoder(w)
+        err := writer.Encode(data)
+        if err != nil {
+            Error.Fatal(err)
+        }
+    }
+}
+
+func TilePurchasehandler(w http.ResponseWriter, r *http.Request, details *UserDetails) (int, interface{}) {
+    var data TilePurchaseHandlerPayload
+    decoder := json.NewDecoder(r.Body)
+    err := decoder.Decode(&data)
+    if err != nil {
+        Error.Fatal(err)
+    }
+
+    // Check balance
+    balance, err := RPCClient.GetBalance(details.SessionId.String())
+    if err != nil {
+            Error.Fatal(err)
+    }
+    balanceF64 := balance.ToBTC()
+    Info.Println(details.SessionId.String(), balanceF64)
+    if balanceF64 < AD_COST {
+        return 400, map[string]string{
+            "error": "funds are insufficient",
+        }
+    }
+
+    // Only one purchase at a time
+    tileManager.PurchaseLock.Lock()
+    defer tileManager.PurchaseLock.Unlock()
+
+    // Ensure Tile was locked by current user
+    canPurchase, err := tileManager.CanPurchase(data.FrameNumber, details.SessionId)
+    if !canPurchase {
+        return 400, map[string]string{
+            "error": err.Error(),
+        }
+    }
+
+    // Perform transaction
+    hash, err := RPCClient.SendFrom(details.SessionId.String(), RootAddress, 200000000)
+    if err != nil {
+        Error.Fatal(err)
+    }
+
+    // Set AD for 5 minutes
+    tileManager.PurchaseTile(
+        data.FrameNumber,
+        data.Message,
+        5 * time.Minute,
+    )
+
+    return 200, hash
 }
 
 func TileLockHandler(w http.ResponseWriter, r *http.Request, details *UserDetails) {
@@ -51,6 +137,10 @@ func TileLockHandler(w http.ResponseWriter, r *http.Request, details *UserDetail
 		Error.Fatal(err)
 	}
 
+        if data.FrameNumber <= 0 || data.FrameNumber >= N_ADS {
+            Error.Fatal("Number of ads invalid")
+        }
+
 	err, res := tileManager.Lock(
 		data.FrameNumber, time.Minute*5, details.SessionId,
 	)
@@ -58,7 +148,7 @@ func TileLockHandler(w http.ResponseWriter, r *http.Request, details *UserDetail
 		Error.Fatal(err)
 	}
 
-	payload := make(map[string]int)
+	payload := make(map[string]string)
 	payload["State"] = res
 	encoder := json.NewEncoder(w)
 	err = encoder.Encode(payload)
@@ -110,7 +200,7 @@ func AuthMiddleware(fn func(http.ResponseWriter, *http.Request, *UserDetails)) f
 				Error.Fatal(err)
 			}
 		}
-		manager := NewKeyManager(client, uniqueIdentifier)
+		manager := NewWalletManager(RPCClient, uniqueIdentifier)
 		details := &UserDetails{
 			SessionId: uniqueIdentifier,
 			Keys:      manager,
@@ -123,23 +213,23 @@ func AuthMiddleware(fn func(http.ResponseWriter, *http.Request, *UserDetails)) f
 func AddressesHandler(w http.ResponseWriter, r *http.Request, details *UserDetails) {
 
 	// Get keypair
-	chain, err := details.Keys.GetChain()
-	if err != nil {
-		panic(err)
-	}
+        Info.Println(details.SessionId.String())
+        pkeys := details.Keys.MakeAddresses(N_ADS)
+        balance, err := RPCClient.GetBalance(details.SessionId.String())
+        if err != nil {
+	    Error.Fatal(err)
+        }
 
-	pkeys := make([]string, N_ADS)
-	for i := 0; i < N_ADS; i++ {
-		acct, _ := chain.Child(uint32(i))
-		addr, _ := acct.Address(&chaincfg.SimNetParams)
-		pkeys[i] = addr.EncodeAddress()
-
-		amount, _ := RPCClient.GetBalance(addr.EncodeAddress())
-		Info.Println(amount)
-	}
+        res := make([]*AddressBalancePair, len(pkeys))
+        for idx, key := range pkeys {
+            res[idx] = &AddressBalancePair{
+                Address: key,
+                Balance: balance.ToBTC(),
+            }
+        }
 
 	encoder := json.NewEncoder(w)
-	encoder.Encode(pkeys)
+	encoder.Encode(res)
 	w.Header().Set("Content-Type", "application/json")
 }
 
@@ -160,23 +250,40 @@ func init() {
 }
 
 func main() {
+        dir, _ := filepath.Abs(filepath.Dir(os.Args[0]))
+        var err error
+        RootPage, err = ioutil.ReadFile(dir + "/templates/index.html")
+        if err != nil {
+            Error.Fatal(err)
+        }
+
 	ntfnHandlers := btcrpcclient.NotificationHandlers{
 		OnBlockConnected: func(hash *wire.ShaHash, height int32, time time.Time) {
 			Info.Printf("Block connected: %v (%d) %v", hash, height, time)
+
+                        block, err := RPCClient.GetBlock(hash)
+                        if err != nil {
+                            Error.Fatal(err)
+                        }
+                        Info.Println(block)
+                        for _, transaction := range block.Transactions() {
+                            msgTx := transaction.MsgTx()
+                            Info.Println(msgTx)
+                        }
 		},
 		OnBlockDisconnected: func(hash *wire.ShaHash, height int32, time time.Time) {
 			Info.Printf("Block disconnected: %v (%d) %v", hash, height, time)
 		},
 	}
 
-	btcdHomeDir := btcutil.AppDataDir("btcd", false)
+	btcdHomeDir := btcutil.AppDataDir("btcwallet", false)
 	certs, err := ioutil.ReadFile(filepath.Join(btcdHomeDir, "rpc.cert"))
 	if err != nil {
 		Error.Fatal(err)
 	}
 
 	connCfg := &btcrpcclient.ConnConfig{
-		Host:         "localhost:18556",
+		Host:         "localhost:18554",
 		Endpoint:     "ws",
 		User:         "admin",
 		Pass:         "admin",
@@ -187,10 +294,23 @@ func main() {
 		Error.Fatal(err)
 	}
 
+        if err = RPCClient.NotifyBlocks(); err != nil {
+                Error.Fatal(err)
+        }
+
+        // Get Address for purchase
+        RootAddress, err = RPCClient.GetNewAddress("test")
+        if err != nil {
+                Error.Fatal(err)
+        }
+
 	// address router
 	r := mux.NewRouter()
 	r.HandleFunc("/addresses", AuthMiddleware(AddressesHandler)).Methods("GET")
 	r.HandleFunc("/tiles", AuthMiddleware(TileHandler)).Methods("GET")
 	r.HandleFunc("/tile", AuthMiddleware(TileLockHandler)).Methods("POST")
+	r.HandleFunc("/purchase", AuthMiddleware(ResponseByReturnHandler(TilePurchasehandler))).Methods("POST")
+	r.HandleFunc("/", RootHandler).Methods("GET")
+        r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
 	Error.Fatal(http.ListenAndServe(":8000", r))
 }

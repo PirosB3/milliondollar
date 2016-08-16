@@ -9,12 +9,77 @@ import "gopkg.in/redis.v4"
 import "github.com/satori/go.uuid"
 import "github.com/btcsuite/btcutil/hdkeychain"
 import "github.com/btcsuite/btcd/chaincfg"
+import "github.com/btcsuite/btcrpcclient"
+import "github.com/btcsuite/btcutil"
+
 
 const SESSION_LIFE = time.Hour * 24 * 30
+
+type AddressGenerator interface {
+    MakeAddresses(num int) []string
+}
+
+type WalletManager struct {
+    Client *btcrpcclient.Client
+    identifier uuid.UUID
+}
+
+func NewWalletManager(
+    client *btcrpcclient.Client,
+    identifier uuid.UUID,
+) *WalletManager {
+    return &WalletManager{
+        Client: client,
+        identifier: identifier,
+    }
+}
+
+func (k *WalletManager) MakeAddresses(num int) []string {
+    // Get existing addresses
+    var addresses []btcutil.Address
+    var err error
+    if addresses, err = k.Client.GetAddressesByAccount(k.identifier.String()); err != nil {
+        err = k.Client.CreateNewAccount(k.identifier.String())
+        if err != nil {
+            panic(err)
+        }
+    }
+
+    // Create remaining addresses
+    res := make([]string, num)
+    for i:=0; i < num; i++ {
+        if i < len(addresses) {
+            res[i] = addresses[i].String()
+        } else {
+            newAddress, err := k.Client.GetNewAddress(k.identifier.String())
+            if err != nil {
+                panic(err)
+            }
+            res[i] = newAddress.String()
+        }
+    }
+    return res
+}
+
 
 type KeyManager struct {
 	client     *redis.Client
 	identifier uuid.UUID
+}
+
+func (k *KeyManager) MakeAddresses(num int) []string {
+	chain, err := k.GetChain()
+	if err != nil {
+		panic(err)
+	}
+
+	pkeys := make([]string, num)
+	for i := 0; i < num; i++ {
+		acct, _ := chain.Child(uint32(i))
+		addr, _ := acct.Address(&chaincfg.SimNetParams)
+		pkeys[i] = addr.EncodeAddress()
+	}
+        return pkeys
 }
 
 func (k *KeyManager) GetChain() (*hdkeychain.ExtendedKey, error) {
