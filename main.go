@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"log"
+	"sync"
 	"net/http"
 	"os"
 	"bytes"
@@ -28,6 +29,7 @@ var (
 	RPCClient    *btcrpcclient.Client
         RootAddress  btcutil.Address
         RootPage     []byte
+        IndexRefreshLock sync.RWMutex
 )
 
 const (
@@ -57,8 +59,10 @@ type TilePurchaseHandlerPayload struct {
 }
 
 func RootHandler(w http.ResponseWriter, r *http.Request) {
+    IndexRefreshLock.RLock()
     reader := bytes.NewReader(RootPage)
     _, err := reader.WriteTo(w)
+    IndexRefreshLock.RUnlock()
     if err != nil {
         Error.Fatal(err)
     }
@@ -137,7 +141,7 @@ func TileLockHandler(w http.ResponseWriter, r *http.Request, details *UserDetail
 		Error.Fatal(err)
 	}
 
-        if data.FrameNumber <= 0 || data.FrameNumber >= N_ADS {
+        if data.FrameNumber < 0 || data.FrameNumber >= N_ADS {
             Error.Fatal("Number of ads invalid")
         }
 
@@ -158,10 +162,23 @@ func TileLockHandler(w http.ResponseWriter, r *http.Request, details *UserDetail
 	w.Header().Set("Content-Type", "application/json")
 }
 
+type TileMessagePair struct {
+    Message string  `json:"message"`
+    State string    `json:"state"`
+}
+
 func TileHandler(w http.ResponseWriter, r *http.Request, details *UserDetails) {
 	states := tileManager.GetState(details.SessionId)
+        results := make([]*TileMessagePair, len(states))
+        for i, state := range states {
+            message, _ := client.Get(tileManager.KeyForBody(i)).Result()
+            results[i] = &TileMessagePair{
+                Message: message,
+                State: state,
+            }
+        }
 	encoder := json.NewEncoder(w)
-	err := encoder.Encode(states)
+	err := encoder.Encode(results)
 	if err != nil {
 		Error.Fatal(err)
 	}
@@ -249,13 +266,26 @@ func init() {
 	Error = log.New(os.Stdout, "ERROR: ", log.Ldate|log.Ltime|log.Lshortfile)
 }
 
-func main() {
+func refreshRootPage() error {
         dir, _ := filepath.Abs(filepath.Dir(os.Args[0]))
         var err error
         RootPage, err = ioutil.ReadFile(dir + "/templates/index.html")
-        if err != nil {
-            Error.Fatal(err)
-        }
+        return err
+}
+
+func main() {
+        refreshRootPage()
+
+        // Refresh root periodically
+        go func() {
+            for {
+                <- time.After(time.Second * 5)
+                IndexRefreshLock.Lock()
+                refreshRootPage()
+                IndexRefreshLock.Unlock()
+                Info.Println("Refreshed root page")
+            }
+        }()
 
 	ntfnHandlers := btcrpcclient.NotificationHandlers{
 		OnBlockConnected: func(hash *wire.ShaHash, height int32, time time.Time) {
