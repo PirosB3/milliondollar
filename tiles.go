@@ -28,7 +28,7 @@ func NewTileManager(numTiles int, client *redis.Client) *TileManager {
 	}
 }
 
-func (tm *TileManager) keyForBody(tile int) string {
+func (tm *TileManager) KeyForBody(tile int) string {
 	return "body:" + strconv.Itoa(tile)
 }
 
@@ -45,7 +45,7 @@ func (tm *TileManager) PurchaseTile(tile int, body string, duration time.Duratio
         }
 
 	_, err = tm.Client.Set(
-		tm.keyForBody(tile), body, duration,
+		tm.KeyForBody(tile), body, duration,
 	).Result()
         if err != nil {
             return err
