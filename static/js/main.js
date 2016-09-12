@@ -1,3 +1,27 @@
+var PurchaseButton = React.createClass({
+    render: function() {
+        console.log(this.props);
+        var classes = ["btn"];
+        var buttonText;
+        var disabled;
+        if (this.props.textLength == 0) {
+            classes.push('btn-danger');
+            buttonText = "Message is empty";
+            disabled = true;
+        } else if (this.props.balance == 0) {
+            classes.push('btn-danger');
+            buttonText = "Insufficient funds";
+            disabled = true;
+        } else {
+            classes.push('btn-default');
+            buttonText = "Purchase";
+            disabled = false;
+        }
+        var classString = classes.join(' ');
+        return <button disabled={disabled} className={classString} type="submit">{buttonText}</button>;
+    }
+});
+
 var Tile = React.createClass({
     lock: function() {
         var self = this;
@@ -42,26 +66,48 @@ var Tile = React.createClass({
         "OPEN": "label label-info"
     },
     render: function() {
-        var src = "https://chart.googleapis.com/chart?chs=250x250&cht=qr&chl=" + this.props.address.address;
+        var src = "https://chart.googleapis.com/chart?chs=200x200&cht=qr&chl=" + this.props.address.address;
         var additional;
 
-        return (
-            <div className="col-md-4">
-                <div className="panel panel-default tile">
-                  <div className="panel-body">
-                    <h3 className="text-center buy-btn">Buy</h3>
-                    <img className="center-block" src={src} />
-                    <div className="row">
-                      <div className="form-group">
-                        <div className="col-md-9">
-                            <input type="text" className="form-control" placeholder="Insert your message here" />
+        var bodyContent;
+        var classes = ["col-md-4"];
+        console.log(this.props.data.state);
+        switch(this.props.data.state) {
+        case "OPEN":
+            bodyContent = (
+              <div className="panel-body">
+                <h3 className="text-center buy-btn">For Sale</h3>
+                <img className="center-block" src={src} />
+                <div className="form-group">
+                    <div className="row top-area">
+                        <div className="col-md-12">
+                            <input value={this.state.message} onChange={this.onChange} type="text" className="form-control" placeholder="Insert your message here" />
                         </div>
-                        <div className="col-md-3 tile-submit-field">
-                            <button className="btn btn-default" type="submit">Submit</button>
-                        </div>
-                      </div>
                     </div>
-                  </div>
+                    <div className="row">
+                        <div className="col-md-12">
+                            <PurchaseButton textLength={this.state.message.length} balance={this.props.balance} />
+                        </div>
+                    </div>
+                </div>
+              </div>
+            )
+            break;
+        case "LOCKED_BY_OTHER":
+            classes.push('tile-locked');
+            bodyContent = (
+                <div className="text-center">
+                    <h3>Locked</h3>
+                    <p>Someone is purchasing this tile</p>
+                </div>
+            )
+            break;
+        }
+
+        return (
+            <div className={classes.join(' ')}>
+                <div className="panel panel-default tile">
+                    {bodyContent}
                 </div>
             </div>
         );
@@ -102,7 +148,7 @@ var MainComponent = React.createClass({
     var res = [];
     for (var i=0; i < this.state.addresses.length; i++) {
         res.push(
-            <Tile key={i} idx={i} data={this.state.tiles[i]} address={this.state.addresses[i]} onLock={this.reloadAddresses} />
+            <Tile key={i} balance={this.state.balance} idx={i} data={this.state.tiles[i]} address={this.state.addresses[i]} onLock={this.reloadAddresses} />
         );
     }
 

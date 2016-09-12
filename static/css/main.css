@@ -13,12 +13,26 @@ body {
     height: 350px;
 }
 
-.buy-btn {
-    margin-top: 0px;
-    margin-bottom: 0px;
+.top-area {
+    margin-bottom: 4px;
 }
 
-.tile-submit-field {
-    padding-left: 0;
-    padding-right: 0;
+.tile-locked .panel{
+    background-color: #ff8080;
 }
+
+
+.tile-locked .text-center {
+    margin-top: 145px;
+}
+
+
+/*.buy-btn {*/
+    /*margin-top: 0px;*/
+    /*margin-bottom: 0px;*/
+/*}*/
+
+/*.tile-submit-field {*/
+    /*padding-left: 0;*/
+    /*padding-right: 0;*/
+/*}*/
