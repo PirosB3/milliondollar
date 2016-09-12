@@ -5,3 +5,20 @@ body {
   padding: 40px 15px;
   text-align: center;
 }
+
+.tile {
+    margin-left: 10px;
+    margin-right: 10px;
+    margin-bottom: 10px;
+    height: 350px;
+}
+
+.buy-btn {
+    margin-top: 0px;
+    margin-bottom: 0px;
+}
+
+.tile-submit-field {
+    padding-left: 0;
+    padding-right: 0;
+}
