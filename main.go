@@ -35,7 +35,7 @@ var (
 const (
 	KEY_1 = "QQByVLj7UQHXmiWiHdV17HQQVLQXUjyB"
 	KEY_2 = "HHQULVBjVXQHVQQX1LB7yLiWjHLQ7dH1QyijByUVVHVmQmXQiWijdUQQQU77ByXQ"
-	N_ADS = 12
+	N_ADS = 6
         AD_COST = 2.0
 )
 
@@ -163,18 +163,25 @@ func TileLockHandler(w http.ResponseWriter, r *http.Request, details *UserDetail
 }
 
 type TileMessagePair struct {
-    Message string  `json:"message"`
-    State string    `json:"state"`
+    Message string        `json:"message"`
+    State string          `json:"state"`
+    TTL time.Duration     `json:"ttl"`
 }
 
 func TileHandler(w http.ResponseWriter, r *http.Request, details *UserDetails) {
 	states := tileManager.GetState(details.SessionId)
         results := make([]*TileMessagePair, len(states))
         for i, state := range states {
-            message, _ := client.Get(tileManager.KeyForBody(i)).Result()
+            key := tileManager.KeyForBody(i)
+            message, _ := client.Get(key).Result()
+            var ttl time.Duration = -1
+            if state != "OPEN" {
+                ttl, _ = client.TTL(key).Result()
+            }
             results[i] = &TileMessagePair{
                 Message: message,
                 State: state,
+                TTL: ttl,
             }
         }
 	encoder := json.NewEncoder(w)
