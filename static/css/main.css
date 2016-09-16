@@ -1,38 +1,57 @@
-body {
-  padding-top: 50px;
+.container {
+    margin-top: 70px;
 }
-.starter-template {
-  padding: 40px 15px;
-  text-align: center;
+
+.mast {
+    height: 275px;
+    border: 3px;
+    border-style: solid;
+    border-color: black;
+    margin-bottom: 40px;
+}
+
+.express {
+    height: 212px;
+    border-top: 0;
+    border-right: 0;
+    border-left: 3px;
+    border-bottom: 3px;
+    border-style: solid;
+    border-color: black;
+}
+
+.express h1 {
+    font-size: 35px;
+    margin-bottom: 30px;
+    margin-top: 20px;
+}
+
+.express ol {
+    padding-left: 10px;
+    font-size: 11px;
+}
+
+.btc-img {
+    height: 220px;
+    margin-left: 240px;
+    margin-top: 25px;
 }
 
 .tile {
-    margin-left: 10px;
-    margin-right: 10px;
-    margin-bottom: 10px;
-    height: 350px;
+    height: 165px;
+    border: 3px;
+    border-style: solid;
+    border-color: black;
 }
 
-.top-area {
-    margin-bottom: 4px;
+.tile .header {
+    background-color: black;
+    color: white;
+    height: 22px;
+    padding-left: 35px;
 }
 
-.tile-locked .panel{
-    background-color: #ff8080;
+.tile .body {
+    font-size: 28px;
+    color: #f7931a;
 }
-
-
-.tile-locked .text-center {
-    margin-top: 145px;
-}
-
-
-/*.buy-btn {*/
-    /*margin-top: 0px;*/
-    /*margin-bottom: 0px;*/
-/*}*/
-
-/*.tile-submit-field {*/
-    /*padding-left: 0;*/
-    /*padding-right: 0;*/
-/*}*/
