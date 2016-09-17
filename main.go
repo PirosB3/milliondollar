@@ -173,12 +173,19 @@ func TileHandler(w http.ResponseWriter, r *http.Request, details *UserDetails) {
         results := make([]*TileMessagePair, len(states))
         for i, state := range states {
             key := tileManager.keyForTile(i)
-            message, _ := client.Get(key).Result()
+
+            message := ""
             var ttl time.Duration = -1
             if state != "OPEN" {
                 ttl, _ = client.TTL(key).Result()
                 ttl /= 1000000000
+            } 
+            
+            if state == "PURCHASED" {
+                bodyKey := tileManager.KeyForBody(i)
+                message, _ = client.Get(bodyKey).Result()
             }
+
             results[i] = &TileMessagePair{
                 Message: message,
                 State: state,

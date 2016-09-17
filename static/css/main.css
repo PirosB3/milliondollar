@@ -80,3 +80,13 @@
 .tile .body h3 {
     font-size: 11px;
 }
+
+.tile .body.pending-tile h3 {
+    font-size: 20px;
+    color: #b2b2b2;
+}
+
+.tile .body.purchased-tile h3 {
+    font-size: 28px;
+    color: #f7931a;
+}

@@ -6,7 +6,6 @@ var Timer = React.createClass({
         };
     },
     onTick: function() {
-        console.log(this.state.secs - 1);
         this.setState({
             secs: this.state.secs - 1
         });
@@ -46,11 +45,13 @@ var Timer = React.createClass({
 var Tile = React.createClass({
     getInitialState: function() {
         return {
+            currentMessage: "",
             message: "",
+            timer: null
         };
     },
     onChange: function(event) {
-        this.setState({message: event.target.value});
+        this.setState({currentMessage: event.target.value});
     },
     dataStates: {
         "LOCKED_BY_CURRENT_USER": "Locked by current user",
@@ -59,47 +60,106 @@ var Tile = React.createClass({
         "OPEN": "Open"
     },
     onArrowClicked: function() {
+        this.setState({message: this.state.currentMessage});
         this.props.onArrowClicked(this.props.idx);
     },
-    render: function() {
-        if (this.props.dataState == 'OPEN') {
-
-            var nextBtnClasses = "next-btn glyphicon glyphicon-play";
-            if (this.state.message.length === 0) {
-                nextBtnClasses += ' hide-text';
-            }
-            return (
-                <div className="tile">
-                    <span onClick={this.onArrowClicked} className={nextBtnClasses} aria-hidden="true"></span>
-                    <div className="header text-center">
-                        AVAILABLE
-                    </div>
-                    <div className="body text-center">
-                        <textarea className="text-center" value={this.state.message} type="text" onChange={this.onChange} />
-                    </div>
-                </div>
-            );
-        } else if (this.props.dataState == 'LOCKED_BY_CURRENT_USER') {
-
-            var nextBtnClasses = "next-btn glyphicon glyphicon-play";
-            var qrCode = "https://chart.googleapis.com/chart?chs=95x95&cht=qr&chl=" + this.props.address;
-            if (this.balance == 0) {
-                nextBtnClasses += ' hide-text';
-            }
-            return (
-                <div className="tile">
-                    <span onClick={this.onArrowClicked} className={nextBtnClasses} aria-hidden="true"></span>
-                    <div className="header text-center">
-                       LOCKED FOR <Timer secs={this.props.ttl} />
-                    </div>
-                    <div className="body text-center">
-                       <h3>SCAN QR CODE</h3>
-                       <img className="center-block" src={qrCode} />
-                    </div>
-                </div>
-            );
-
+    checkAndPurchaseTile: function() {
+        var isCorrectTile = this.props.dataState == 'LOCKED_BY_CURRENT_USER';
+        var balanceSuccessful = this.props.balance > 0;
+        if (isCorrectTile && balanceSuccessful) {
+            $.post("/purchase", JSON.stringify({
+                "frame_number": this.props.idx,
+                "message": this.state.message,
+            }), function(res) {
+                self.reloadAddresses();
+            });
         }
+    },
+    componentWillReceiveProps: function(nextProps) {
+        clearInterval(this.state.timer);
+        if (nextProps.dataState == 'LOCKED_BY_CURRENT_USER') {
+            var timer = setInterval(this.checkAndPurchaseTile, 3000);
+            this.setState({timer: timer});
+        } else {
+            if (this.state.timer) {
+                clearInterval(this.state.timer);
+                this.setState({timer: null});
+            }
+        }
+    },
+    renderOpen: function() {
+        var nextBtnClasses = "next-btn glyphicon glyphicon-play";
+        if (this.state.currentMessage.length === 0) {
+            nextBtnClasses += ' hide-text';
+        }
+        return (
+            <div className="tile">
+                <span onClick={this.onArrowClicked} className={nextBtnClasses} aria-hidden="true"></span>
+                <div className="header text-center">
+                    AVAILABLE
+                </div>
+                <div className="body text-center">
+                    <textarea className="text-center" value={this.state.currentMessage} type="text" onChange={this.onChange} />
+                </div>
+            </div>
+        );
+    },
+    renderLockedByCurrentUser: function() {
+        var nextBtnClasses = "next-btn glyphicon glyphicon-play";
+        var qrCode = "https://chart.googleapis.com/chart?chs=95x95&cht=qr&chl=" + this.props.address;
+        if (this.balance == 0) {
+            nextBtnClasses += ' hide-text';
+        }
+        return (
+            <div className="tile">
+                <div className="header text-center">
+                   LOCKED FOR <Timer secs={this.props.ttl} />
+                </div>
+                <div className="body text-center">
+                   <h3>SCAN QR CODE</h3>
+                   <img className="center-block" src={qrCode} />
+                </div>
+            </div>
+        );
+    },
+    renderLockedByOther: function() {
+        return (
+            <div className="tile">
+                <div className="header text-center">
+                   PENDING
+                </div>
+                <div className="body text-center pending-tile">
+                   <h3>Someone is buying this tile</h3>
+                </div>
+            </div>
+        );
+    },
+    renderPurchased: function() {
+        return (
+            <div className="tile">
+                <div className="header text-center">
+                   EXPIRES IN <Timer secs={this.props.ttl} />
+                </div>
+                <div className="body text-center purchased-tile">
+                   <h3>{this.props.purchasedMessage}</h3>
+                </div>
+            </div>
+        );
+    },
+    render: function() {
+        if (this.props.dataState == 'PURCHASED') {
+            return this.renderPurchased();
+        }
+
+        if (this.props.dataState == 'LOCKED_BY_OTHER') {
+            return this.renderLockedByOther();
+        }
+
+        if (this.props.dataState == 'LOCKED_BY_CURRENT_USER' && this.state.message.length > 0) {
+            return this.renderLockedByCurrentUser();
+        }
+
+        return this.renderOpen();
     }
 });
 
@@ -131,7 +191,6 @@ var MainComponent = React.createClass({
       $.post("/tile", JSON.stringify({
           "frame_number": idx
       }), function(res) {
-          debugger;
           self.reloadAddresses();
       });
   },
@@ -149,7 +208,7 @@ var MainComponent = React.createClass({
                  dataState={tileData.state}
                  ttl={tileData.ttl}
                  address={address}
-                 message={tileData.message}
+                 purchasedMessage={tileData.message}
                  balance={balance} />
             </div>
         );
