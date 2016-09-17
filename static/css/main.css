@@ -48,10 +48,35 @@
     background-color: black;
     color: white;
     height: 22px;
-    padding-left: 35px;
+    /*padding-left: 35px;*/
 }
 
 .tile .body {
     font-size: 28px;
     color: #f7931a;
+}
+
+.tile .body textarea {
+    width: 90%;
+    height: 136px;
+    border: none; 
+    resize: none;
+}
+
+.tile .body textarea:focus{
+    outline: none;
+}
+
+.tile .next-btn {
+    position: absolute;
+    right: 18px;
+    top: 85px;
+}
+
+.tile .next-btn.hide-text {
+    display: none;
+}
+
+.tile .body h3 {
+    font-size: 11px;
 }
