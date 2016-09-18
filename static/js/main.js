@@ -126,7 +126,7 @@ var Tile = React.createClass({
         return (
             <div className="tile">
                 <div className="header text-center">
-                   PENDING
+                   LOCKED FOR <Timer secs={this.props.ttl} />
                 </div>
                 <div className="body text-center pending-tile">
                    <h3>Someone is buying this tile</h3>

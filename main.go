@@ -302,25 +302,6 @@ func main() {
 		}
 	}()
 
-	ntfnHandlers := btcrpcclient.NotificationHandlers{
-		OnBlockConnected: func(hash *wire.ShaHash, height int32, time time.Time) {
-			Info.Printf("Block connected: %v (%d) %v", hash, height, time)
-
-			block, err := RPCClient.GetBlock(hash)
-			if err != nil {
-				Error.Fatal(err)
-			}
-			Info.Println(block)
-			for _, transaction := range block.Transactions() {
-				msgTx := transaction.MsgTx()
-				Info.Println(msgTx)
-			}
-		},
-		OnBlockDisconnected: func(hash *wire.ShaHash, height int32, time time.Time) {
-			Info.Printf("Block disconnected: %v (%d) %v", hash, height, time)
-		},
-	}
-
 	btcdHomeDir := btcutil.AppDataDir("btcwallet", false)
 	certs, err := ioutil.ReadFile(filepath.Join(btcdHomeDir, "rpc.cert"))
 	if err != nil {
@@ -334,7 +315,7 @@ func main() {
 		Pass:         "admin",
 		Certificates: certs,
 	}
-	RPCClient, err = btcrpcclient.New(connCfg, &ntfnHandlers)
+	RPCClient, err = btcrpcclient.New(connCfg, nil)
 	if err != nil {
 		Error.Fatal(err)
 	}
