@@ -95,14 +95,12 @@ func TilePurchasehandler(w http.ResponseWriter, r *http.Request, details *UserDe
 		Error.Fatal(err)
 	}
 
+        // Get address in frame
+        address := details.Keys.MakeAddresses(N_ADS)[data.FrameNumber]
+
 	// Check balance
-	balance, err := RPCClient.GetBalance(details.SessionId.String())
-	if err != nil {
-		Error.Fatal(err)
-	}
-	balanceF64 := balance.ToBTC()
-	Info.Println(details.SessionId.String(), balanceF64)
-	if balanceF64 < AD_COST {
+	balance := details.Keys.GetBalanceForAddress(address)
+	if balance < AD_COST {
 		return 400, map[string]string{
 			"error": "funds are insufficient",
 		}
@@ -121,10 +119,10 @@ func TilePurchasehandler(w http.ResponseWriter, r *http.Request, details *UserDe
 	}
 
 	// Perform transaction
-	hash, err := RPCClient.SendFrom(details.SessionId.String(), RootAddress, 200000000)
-	if err != nil {
-		Error.Fatal(err)
-	}
+	//hash, err := RPCClient.SendFrom(details.SessionId.String(), RootAddress, 200000000)
+	//if err != nil {
+		//Error.Fatal(err)
+	//}
 
 	// Set AD for 5 minutes
 	tileManager.PurchaseTile(
@@ -133,7 +131,7 @@ func TilePurchasehandler(w http.ResponseWriter, r *http.Request, details *UserDe
 		5*time.Minute,
 	)
 
-	return 200, hash
+	return 200, ""
 }
 
 func TileLockHandler(w http.ResponseWriter, r *http.Request, details *UserDetails) {

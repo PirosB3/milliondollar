@@ -19,6 +19,7 @@ const SESSION_LIFE = time.Hour * 24 * 30
 type AddressGenerator interface {
 	MakeAddresses(num int) []string
 	GetAddressBalances(num int) []float64
+        GetBalanceForAddress(address string) float64
 }
 
 type WalletManager struct {
@@ -73,24 +74,27 @@ func (k *KeyManager) GetAddressBalances(num int) []float64 {
 	addresses := k.MakeAddresses(num)
 	balances := make([]float64, len(addresses))
 	for i, address := range addresses {
-		rows, err := k.dbs.Table("transactions").Select(
-			"sum(amount)",
-		).Where(
-			"address = ? AND spent = ?",
-			address, false,
-		).Rows()
-		if err != nil {
-			Error.Fatal(err)
-		}
-		defer rows.Close()
-
-		var balance float64
-		rows.Next()
-		rows.Scan(&balance)
-
-		balances[i] = balance
+		balances[i] = k.GetBalanceForAddress(address)
 	}
 	return balances
+}
+
+func (k *KeyManager) GetBalanceForAddress(address string) float64 {
+        rows, err := k.dbs.Table("transactions").Select(
+                "sum(amount)",
+        ).Where(
+                "address = ? AND spent = ?",
+                address, false,
+        ).Rows()
+        if err != nil {
+                Error.Fatal(err)
+        }
+        defer rows.Close()
+
+        var balance float64
+        rows.Next()
+        rows.Scan(&balance)
+        return balance
 }
 
 func (k *KeyManager) MakeAddresses(num int) []string {
