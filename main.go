@@ -11,15 +11,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcrpcclient"
 	"github.com/btcsuite/btcutil"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/securecookie"
-	"github.com/satori/go.uuid"
-	"gopkg.in/redis.v4"
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/postgres"
-        "github.com/btcsuite/btcd/chaincfg"
+	"github.com/satori/go.uuid"
+	"gopkg.in/redis.v4"
 )
 
 var (
@@ -32,7 +32,7 @@ var (
 	RootAddress      btcutil.Address
 	RootPage         []byte
 	IndexRefreshLock sync.RWMutex
-	dbs       *gorm.DB
+	dbs              *gorm.DB
 )
 
 const (
@@ -252,7 +252,7 @@ func AddressesHandler(w http.ResponseWriter, r *http.Request, details *UserDetai
 	pkeys := details.Keys.MakeAddresses(N_ADS)
 
 	res := make([]*AddressBalancePair, len(pkeys))
-        balances := details.Keys.GetAddressBalances(len(pkeys))
+	balances := details.Keys.GetAddressBalances(len(pkeys))
 	for idx, key := range pkeys {
 		res[idx] = &AddressBalancePair{
 			Address: key,
@@ -331,7 +331,7 @@ func main() {
 	}
 
 	// Get Address for purchase
-        addressString := "SkbWMEgsoVwVirAsviDb5QL3ug6gzpozN3"
+	addressString := "SkbWMEgsoVwVirAsviDb5QL3ug6gzpozN3"
 	RootAddress, err = btcutil.DecodeAddress(addressString, &chaincfg.SimNetParams)
 	if err != nil {
 		Error.Fatal(err)

@@ -18,7 +18,7 @@ const SESSION_LIFE = time.Hour * 24 * 30
 
 type AddressGenerator interface {
 	MakeAddresses(num int) []string
-        GetAddressBalances(num int) []float64
+	GetAddressBalances(num int) []float64
 }
 
 type WalletManager struct {
@@ -70,27 +70,27 @@ type KeyManager struct {
 }
 
 func (k *KeyManager) GetAddressBalances(num int) []float64 {
-    addresses := k.MakeAddresses(num)
-    balances := make([]float64, len(addresses))
-    for i, address := range addresses {
-        rows, err := k.dbs.Table("transactions").Select(
-            "sum(amount)",
-        ).Where(
-            "address = ? AND spent = ?",
-            address, false,
-        ).Rows()
-        if err != nil {
-            Error.Fatal(err)
-        }
-        defer rows.Close()
+	addresses := k.MakeAddresses(num)
+	balances := make([]float64, len(addresses))
+	for i, address := range addresses {
+		rows, err := k.dbs.Table("transactions").Select(
+			"sum(amount)",
+		).Where(
+			"address = ? AND spent = ?",
+			address, false,
+		).Rows()
+		if err != nil {
+			Error.Fatal(err)
+		}
+		defer rows.Close()
 
-        var balance float64
-        rows.Next()
-        rows.Scan(&balance)
+		var balance float64
+		rows.Next()
+		rows.Scan(&balance)
 
-        balances[i] = balance
-    }
-    return balances
+		balances[i] = balance
+	}
+	return balances
 }
 
 func (k *KeyManager) MakeAddresses(num int) []string {
@@ -104,7 +104,7 @@ func (k *KeyManager) MakeAddresses(num int) []string {
 		acct, _ := chain.Child(uint32(i))
 		addr, _ := acct.Address(&chaincfg.SimNetParams)
 		pkeys[i] = addr.EncodeAddress()
-                k.client.SAdd("known_addresses", pkeys[i])
+		k.client.SAdd("known_addresses", pkeys[i])
 	}
 	return pkeys
 }
@@ -149,6 +149,6 @@ func NewKeyManager(client *redis.Client, identifier uuid.UUID, dbs *gorm.DB) *Ke
 	return &KeyManager{
 		client:     client,
 		identifier: identifier,
-                dbs: dbs,
+		dbs:        dbs,
 	}
 }
