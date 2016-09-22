@@ -11,11 +11,14 @@ import "github.com/btcsuite/btcutil/hdkeychain"
 import "github.com/btcsuite/btcd/chaincfg"
 import "github.com/btcsuite/btcrpcclient"
 import "github.com/btcsuite/btcutil"
+import "github.com/jinzhu/gorm"
+import _ "github.com/jinzhu/gorm/dialects/postgres"
 
 const SESSION_LIFE = time.Hour * 24 * 30
 
 type AddressGenerator interface {
 	MakeAddresses(num int) []string
+        GetAddressBalances(num int) []float64
 }
 
 type WalletManager struct {
@@ -61,8 +64,33 @@ func (k *WalletManager) MakeAddresses(num int) []string {
 }
 
 type KeyManager struct {
+	dbs        *gorm.DB
 	client     *redis.Client
 	identifier uuid.UUID
+}
+
+func (k *KeyManager) GetAddressBalances(num int) []float64 {
+    addresses := k.MakeAddresses(num)
+    balances := make([]float64, len(addresses))
+    for i, address := range addresses {
+        rows, err := k.dbs.Table("transactions").Select(
+            "sum(amount)",
+        ).Where(
+            "address = ? AND spent = ?",
+            address, false,
+        ).Rows()
+        if err != nil {
+            Error.Fatal(err)
+        }
+        defer rows.Close()
+
+        var balance float64
+        rows.Next()
+        rows.Scan(&balance)
+
+        balances[i] = balance
+    }
+    return balances
 }
 
 func (k *KeyManager) MakeAddresses(num int) []string {
@@ -76,6 +104,7 @@ func (k *KeyManager) MakeAddresses(num int) []string {
 		acct, _ := chain.Child(uint32(i))
 		addr, _ := acct.Address(&chaincfg.SimNetParams)
 		pkeys[i] = addr.EncodeAddress()
+                k.client.SAdd("known_addresses", pkeys[i])
 	}
 	return pkeys
 }
@@ -116,9 +145,10 @@ func (k *KeyManager) GetMasterKey() io.Reader {
 	}
 }
 
-func NewKeyManager(client *redis.Client, identifier uuid.UUID) *KeyManager {
+func NewKeyManager(client *redis.Client, identifier uuid.UUID, dbs *gorm.DB) *KeyManager {
 	return &KeyManager{
 		client:     client,
 		identifier: identifier,
+                dbs: dbs,
 	}
 }

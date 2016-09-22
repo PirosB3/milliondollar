@@ -11,13 +11,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcrpcclient"
 	"github.com/btcsuite/btcutil"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/securecookie"
 	"github.com/satori/go.uuid"
 	"gopkg.in/redis.v4"
+	"github.com/jinzhu/gorm"
+	_ "github.com/jinzhu/gorm/dialects/postgres"
+        "github.com/btcsuite/btcd/chaincfg"
 )
 
 var (
@@ -30,6 +32,7 @@ var (
 	RootAddress      btcutil.Address
 	RootPage         []byte
 	IndexRefreshLock sync.RWMutex
+	dbs       *gorm.DB
 )
 
 const (
@@ -232,7 +235,7 @@ func AuthMiddleware(fn func(http.ResponseWriter, *http.Request, *UserDetails)) f
 				Error.Fatal(err)
 			}
 		}
-		manager := NewWalletManager(RPCClient, uniqueIdentifier)
+		manager := NewKeyManager(client, uniqueIdentifier, dbs)
 		details := &UserDetails{
 			SessionId: uniqueIdentifier,
 			Keys:      manager,
@@ -247,16 +250,13 @@ func AddressesHandler(w http.ResponseWriter, r *http.Request, details *UserDetai
 	// Get keypair
 	Info.Println(details.SessionId.String())
 	pkeys := details.Keys.MakeAddresses(N_ADS)
-	balance, err := RPCClient.GetBalance(details.SessionId.String())
-	if err != nil {
-		Error.Fatal(err)
-	}
 
 	res := make([]*AddressBalancePair, len(pkeys))
+        balances := details.Keys.GetAddressBalances(len(pkeys))
 	for idx, key := range pkeys {
 		res[idx] = &AddressBalancePair{
 			Address: key,
-			Balance: balance.ToBTC(),
+			Balance: balances[idx],
 		}
 	}
 
@@ -279,6 +279,12 @@ func init() {
 
 	Info = log.New(os.Stdout, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
 	Error = log.New(os.Stdout, "ERROR: ", log.Ldate|log.Ltime|log.Lshortfile)
+
+	var err error
+	dbs, err = gorm.Open("postgres", "host=localhost port=32768 user=postgres sslmode=disable")
+	if err != nil {
+		Error.Fatal(err)
+	}
 }
 
 func refreshRootPage() error {
@@ -302,14 +308,14 @@ func main() {
 		}
 	}()
 
-	btcdHomeDir := btcutil.AppDataDir("btcwallet", false)
+	btcdHomeDir := btcutil.AppDataDir("btcd", false)
 	certs, err := ioutil.ReadFile(filepath.Join(btcdHomeDir, "rpc.cert"))
 	if err != nil {
 		Error.Fatal(err)
 	}
 
 	connCfg := &btcrpcclient.ConnConfig{
-		Host:         "localhost:18554",
+		Host:         "localhost:18556",
 		Endpoint:     "ws",
 		User:         "admin",
 		Pass:         "admin",
@@ -325,7 +331,8 @@ func main() {
 	}
 
 	// Get Address for purchase
-	RootAddress, err = RPCClient.GetNewAddress("test")
+        addressString := "SkbWMEgsoVwVirAsviDb5QL3ug6gzpozN3"
+	RootAddress, err = btcutil.DecodeAddress(addressString, &chaincfg.SimNetParams)
 	if err != nil {
 		Error.Fatal(err)
 	}
