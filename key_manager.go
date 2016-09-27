@@ -1,6 +1,7 @@
 package main
 
 import "io"
+import "errors"
 import "encoding/hex"
 import "io/ioutil"
 import "strings"
@@ -16,6 +17,7 @@ import "github.com/btcsuite/btcd/txscript"
 import "github.com/btcsuite/btcd/chaincfg/chainhash"
 import "github.com/btcsuite/btcutil"
 import "github.com/jinzhu/gorm"
+import "github.com/btcsuite/btcd/btcec"
 import _ "github.com/jinzhu/gorm/dialects/postgres"
 
 const SESSION_LIFE = time.Hour * 24 * 30
@@ -72,7 +74,9 @@ func (k *WalletManager) MakeAddresses(num int) []string {
 type KeyManager struct {
 	dbs        *gorm.DB
 	client     *redis.Client
+        rpc        *btcrpcclient.Client
 	identifier uuid.UUID
+        addressMap map[string]*btcec.PrivateKey
 }
 
 func (k *KeyManager) GetAddressBalances(num int) []float64 {
@@ -113,6 +117,8 @@ func (k *KeyManager) MakeAddresses(num int) []string {
 		acct, _ := chain.Child(uint32(i))
 		addr, _ := acct.Address(&chaincfg.SimNetParams)
 		pkeys[i] = addr.EncodeAddress()
+                privKey, _ := acct.ECPrivKey()
+                k.addressMap[pkeys[i]] = privKey
 		k.client.SAdd("known_addresses", pkeys[i])
 	}
 	return pkeys
@@ -223,16 +229,41 @@ func (k *KeyManager) PerformPurchase(address btcutil.Address, amount float64, ds
         tx.AddTxOut(changeTxOut)
     }
 
+    // Sign inputs
+    for _, txin := range tx.TxIn {
+        hash := txin.PreviousOutPoint.Hash
+        prevTx, _ := k.rpc.GetRawTransaction(&hash)
+
+        sigScript, err := txscript.SignTxOutput(
+            &chaincfg.SimNetParams, tx, 0, prevTx.MsgTx().TxOut[0].PkScript,
+            txscript.SigHashAll, k, nil, nil,
+        )
+        if err != nil {
+            Error.Panic(err)
+        }
+        txin.SignatureScript = sigScript
+    }
+
     data := make([]byte, 0, tx.SerializeSize())
     buf := bytes.NewBuffer(data)
     tx.Serialize(buf)
     Info.Println(hex.EncodeToString(buf.Bytes()))
 }
 
-func NewKeyManager(client *redis.Client, identifier uuid.UUID, dbs *gorm.DB) *KeyManager {
+func (k *KeyManager) GetKey(address btcutil.Address) (*btcec.PrivateKey, bool, error) {
+    if pk := k.addressMap[address.String()]; pk != nil {
+        return pk, true, nil
+    }
+
+    return nil, false, errors.New("Could not find key")
+}
+
+func NewKeyManager(client *redis.Client, identifier uuid.UUID, dbs *gorm.DB, rpc *btcrpcclient.Client) *KeyManager {
 	return &KeyManager{
 		client:     client,
 		identifier: identifier,
 		dbs:        dbs,
+                rpc:        rpc,
+                addressMap: make(map[string]*btcec.PrivateKey),
 	}
 }

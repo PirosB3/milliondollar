@@ -111,12 +111,12 @@ func TilePurchasehandler(w http.ResponseWriter, r *http.Request, details *UserDe
 	defer tileManager.PurchaseLock.Unlock()
 
 	// Ensure Tile was locked by current user
-	canPurchase, err := tileManager.CanPurchase(data.FrameNumber, details.SessionId)
-	if !canPurchase {
-		return 400, map[string]string{
-			"error": err.Error(),
-		}
-	}
+	//canPurchase, err := tileManager.CanPurchase(data.FrameNumber, details.SessionId)
+	//if !canPurchase {
+		//return 400, map[string]string{
+			//"error": err.Error(),
+		//}
+	//}
 
 	// Perform transaction
         addrInstance, _ := btcutil.DecodeAddress(address, &chaincfg.SimNetParams)
@@ -231,7 +231,7 @@ func AuthMiddleware(fn func(http.ResponseWriter, *http.Request, *UserDetails)) f
 				Error.Fatal(err)
 			}
 		}
-		manager := NewKeyManager(client, uniqueIdentifier, dbs)
+		manager := NewKeyManager(client, uniqueIdentifier, dbs, RPCClient)
 		details := &UserDetails{
 			SessionId: uniqueIdentifier,
 			Keys:      manager,
