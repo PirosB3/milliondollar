@@ -115,10 +115,9 @@ func main() {
 				Error.Fatal(err)
 			}
 
-			txs := block.Transactions()
-			for _, tx := range txs {
+			txs := block.Transactions
+			for _, msgTx := range txs {
 
-				msgTx := tx.MsgTx()
 				data := make([]byte, 0, msgTx.SerializeSize())
 				buf := bytes.NewBuffer(data)
 				msgTx.Serialize(buf)

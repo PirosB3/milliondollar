@@ -1,6 +1,7 @@
 package main
 
 import "io"
+import "encoding/hex"
 import "io/ioutil"
 import "strings"
 import "bytes"
@@ -10,6 +11,9 @@ import "github.com/satori/go.uuid"
 import "github.com/btcsuite/btcutil/hdkeychain"
 import "github.com/btcsuite/btcd/chaincfg"
 import "github.com/btcsuite/btcrpcclient"
+import "github.com/btcsuite/btcd/wire"
+import "github.com/btcsuite/btcd/txscript"
+import "github.com/btcsuite/btcd/chaincfg/chainhash"
 import "github.com/btcsuite/btcutil"
 import "github.com/jinzhu/gorm"
 import _ "github.com/jinzhu/gorm/dialects/postgres"
@@ -17,9 +21,10 @@ import _ "github.com/jinzhu/gorm/dialects/postgres"
 const SESSION_LIFE = time.Hour * 24 * 30
 
 type AddressGenerator interface {
+	PerformPurchase(address btcutil.Address, amount float64, dstAddress btcutil.Address)
 	MakeAddresses(num int) []string
 	GetAddressBalances(num int) []float64
-        GetBalanceForAddress(address string) float64
+	GetBalanceForAddress(address string) float64
 }
 
 type WalletManager struct {
@@ -80,21 +85,21 @@ func (k *KeyManager) GetAddressBalances(num int) []float64 {
 }
 
 func (k *KeyManager) GetBalanceForAddress(address string) float64 {
-        rows, err := k.dbs.Table("transactions").Select(
-                "sum(amount)",
-        ).Where(
-                "address = ? AND spent = ?",
-                address, false,
-        ).Rows()
-        if err != nil {
-                Error.Fatal(err)
-        }
-        defer rows.Close()
+	rows, err := k.dbs.Table("transactions").Select(
+		"sum(amount)",
+	).Where(
+		"address = ? AND spent = ?",
+		address, false,
+	).Rows()
+	if err != nil {
+		Error.Fatal(err)
+	}
+	defer rows.Close()
 
-        var balance float64
-        rows.Next()
-        rows.Scan(&balance)
-        return balance
+	var balance float64
+	rows.Next()
+	rows.Scan(&balance)
+	return balance
 }
 
 func (k *KeyManager) MakeAddresses(num int) []string {
@@ -147,6 +152,81 @@ func (k *KeyManager) GetMasterKey() io.Reader {
 		k.client.Expire(identifierKey, SESSION_LIFE)
 		return strings.NewReader(val)
 	}
+}
+
+func (k *KeyManager) Unspent(address string, amount float64) ([]*wire.OutPoint, float64) {
+	rows, err := k.dbs.Table("transactions").Select(
+            "transaction_id, idx, amount",
+	).Where(
+		"address = ? AND spent = ?",
+		address, false,
+	).Rows()
+        if err != nil {
+            Error.Fatal(err)
+        }
+        defer rows.Close()
+
+        var res float64 = 0
+        var outPoints []*wire.OutPoint
+        for rows.Next() && res < amount {
+            var transactionId string
+            var idx int
+            var amount float64
+            rows.Scan(&transactionId, &idx, &amount)
+
+            txHash, err := chainhash.NewHashFromStr(transactionId)
+            if err != nil {
+                Error.Fatal(err)
+            }
+            op := wire.NewOutPoint(
+                txHash, uint32(idx),
+            )
+            outPoints = append(outPoints, op)
+            res += amount
+        }
+        return outPoints, res
+}
+
+func (k *KeyManager) PerformPurchase(address btcutil.Address, amount float64, dstAddress btcutil.Address) {
+    // Get all unspent transactions fot amount
+    inputs, totalSpent := k.Unspent(address.String(), amount)
+    totalSpent *= 100000000
+    amount *= 100000000
+
+    totalSpentInt := int64(totalSpent)
+    amountInt := int64(amount)
+
+    // Create TXins
+    tx := wire.NewMsgTx()
+    for _, input := range inputs {
+        txIn := wire.NewTxIn(input, nil)
+        tx.AddTxIn(txIn)
+    }
+
+    // Create pay-to-addr script
+    pkScript, err := txscript.PayToAddrScript(dstAddress)
+    if err != nil {
+        Error.Fatal(err)
+    }
+
+    // Add transactions
+    txOut := wire.NewTxOut(amountInt, pkScript)
+    tx.AddTxOut(txOut)
+
+    delta := totalSpentInt - amountInt
+    if delta > 0 {
+        changePkScript, err := txscript.PayToAddrScript(address)
+        if err != nil {
+            Error.Fatal(err)
+        }
+        changeTxOut := wire.NewTxOut(delta, changePkScript)
+        tx.AddTxOut(changeTxOut)
+    }
+
+    data := make([]byte, 0, tx.SerializeSize())
+    buf := bytes.NewBuffer(data)
+    tx.Serialize(buf)
+    Info.Println(hex.EncodeToString(buf.Bytes()))
 }
 
 func NewKeyManager(client *redis.Client, identifier uuid.UUID, dbs *gorm.DB) *KeyManager {

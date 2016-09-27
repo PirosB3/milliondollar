@@ -95,8 +95,8 @@ func TilePurchasehandler(w http.ResponseWriter, r *http.Request, details *UserDe
 		Error.Fatal(err)
 	}
 
-        // Get address in frame
-        address := details.Keys.MakeAddresses(N_ADS)[data.FrameNumber]
+	// Get address in frame
+	address := details.Keys.MakeAddresses(N_ADS)[data.FrameNumber]
 
 	// Check balance
 	balance := details.Keys.GetBalanceForAddress(address)
@@ -119,17 +119,15 @@ func TilePurchasehandler(w http.ResponseWriter, r *http.Request, details *UserDe
 	}
 
 	// Perform transaction
-	//hash, err := RPCClient.SendFrom(details.SessionId.String(), RootAddress, 200000000)
-	//if err != nil {
-		//Error.Fatal(err)
-	//}
+        addrInstance, _ := btcutil.DecodeAddress(address, &chaincfg.SimNetParams)
+        details.Keys.PerformPurchase(addrInstance, 0.5, RootAddress)
 
 	// Set AD for 5 minutes
-	tileManager.PurchaseTile(
-		data.FrameNumber,
-		data.Message,
-		5*time.Minute,
-	)
+	//tileManager.PurchaseTile(
+		//data.FrameNumber,
+		//data.Message,
+		//5*time.Minute,
+	//)
 
 	return 200, ""
 }
@@ -329,7 +327,7 @@ func main() {
 	}
 
 	// Get Address for purchase
-	addressString := "SkbWMEgsoVwVirAsviDb5QL3ug6gzpozN3"
+	addressString := "14HnFMWGN7p2tqkwzdpQuYkFPT1DbpMjTu"
 	RootAddress, err = btcutil.DecodeAddress(addressString, &chaincfg.SimNetParams)
 	if err != nil {
 		Error.Fatal(err)
