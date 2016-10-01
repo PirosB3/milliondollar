@@ -65,7 +65,7 @@ var Tile = React.createClass({
     },
     checkAndPurchaseTile: function() {
         var isCorrectTile = this.props.dataState == 'LOCKED_BY_CURRENT_USER';
-        var balanceSuccessful = this.props.balance > 0;
+        var balanceSuccessful = this.props.balance > 0.5;
         if (isCorrectTile && balanceSuccessful) {
             $.post("/purchase", JSON.stringify({
                 "frame_number": this.props.idx,

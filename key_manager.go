@@ -2,11 +2,11 @@ package main
 
 import "io"
 import "errors"
-import "encoding/hex"
 import "io/ioutil"
 import "strings"
 import "bytes"
 import "time"
+import "encoding/hex"
 import "gopkg.in/redis.v4"
 import "github.com/satori/go.uuid"
 import "github.com/btcsuite/btcutil/hdkeychain"
@@ -23,60 +23,18 @@ import _ "github.com/jinzhu/gorm/dialects/postgres"
 const SESSION_LIFE = time.Hour * 24 * 30
 
 type AddressGenerator interface {
-	PerformPurchase(address btcutil.Address, amount float64, dstAddress btcutil.Address)
+	PerformPurchase(address btcutil.Address, amount float64, dstAddress btcutil.Address) string
 	MakeAddresses(num int) []string
 	GetAddressBalances(num int) []float64
 	GetBalanceForAddress(address string) float64
 }
 
-type WalletManager struct {
-	Client     *btcrpcclient.Client
-	identifier uuid.UUID
-}
-
-func NewWalletManager(
-	client *btcrpcclient.Client,
-	identifier uuid.UUID,
-) *WalletManager {
-	return &WalletManager{
-		Client:     client,
-		identifier: identifier,
-	}
-}
-
-func (k *WalletManager) MakeAddresses(num int) []string {
-	// Get existing addresses
-	var addresses []btcutil.Address
-	var err error
-	if addresses, err = k.Client.GetAddressesByAccount(k.identifier.String()); err != nil {
-		err = k.Client.CreateNewAccount(k.identifier.String())
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	// Create remaining addresses
-	res := make([]string, num)
-	for i := 0; i < num; i++ {
-		if i < len(addresses) {
-			res[i] = addresses[i].String()
-		} else {
-			newAddress, err := k.Client.GetNewAddress(k.identifier.String())
-			if err != nil {
-				panic(err)
-			}
-			res[i] = newAddress.String()
-		}
-	}
-	return res
-}
-
 type KeyManager struct {
 	dbs        *gorm.DB
 	client     *redis.Client
-        rpc        *btcrpcclient.Client
+	rpc        *btcrpcclient.Client
 	identifier uuid.UUID
-        addressMap map[string]*btcec.PrivateKey
+	addressMap map[string]*btcec.PrivateKey
 }
 
 func (k *KeyManager) GetAddressBalances(num int) []float64 {
@@ -117,9 +75,10 @@ func (k *KeyManager) MakeAddresses(num int) []string {
 		acct, _ := chain.Child(uint32(i))
 		addr, _ := acct.Address(&chaincfg.SimNetParams)
 		pkeys[i] = addr.EncodeAddress()
-                privKey, _ := acct.ECPrivKey()
-                k.addressMap[pkeys[i]] = privKey
+		privKey, _ := acct.ECPrivKey()
+		k.addressMap[pkeys[i]] = privKey
 		k.client.SAdd("known_addresses", pkeys[i])
+		Info.Printf("Made address %s for user %s\n", pkeys[i], k.identifier)
 	}
 	return pkeys
 }
@@ -162,100 +121,125 @@ func (k *KeyManager) GetMasterKey() io.Reader {
 
 func (k *KeyManager) Unspent(address string, amount float64) ([]*wire.OutPoint, float64) {
 	rows, err := k.dbs.Table("transactions").Select(
-            "transaction_id, idx, amount",
+		"transaction_id, idx, amount",
 	).Where(
 		"address = ? AND spent = ?",
 		address, false,
 	).Rows()
-        if err != nil {
-            Error.Fatal(err)
-        }
-        defer rows.Close()
+	if err != nil {
+		Error.Fatal(err)
+	}
+	defer rows.Close()
 
-        var res float64 = 0
-        var outPoints []*wire.OutPoint
-        for rows.Next() && res < amount {
-            var transactionId string
-            var idx int
-            var amount float64
-            rows.Scan(&transactionId, &idx, &amount)
+	var res float64 = 0
+	var outPoints []*wire.OutPoint
+	for rows.Next() && res < amount {
+		var transactionId string
+		var idx int
+		var amount float64
+		rows.Scan(&transactionId, &idx, &amount)
 
-            txHash, err := chainhash.NewHashFromStr(transactionId)
-            if err != nil {
-                Error.Fatal(err)
-            }
-            op := wire.NewOutPoint(
-                txHash, uint32(idx),
-            )
-            outPoints = append(outPoints, op)
-            res += amount
-        }
-        return outPoints, res
+		// If transaction is in the mempool (spent) ignore.
+		key := "spent_tx_in_mempool:" + transactionId
+		if res, _ := k.client.Exists(key).Result(); res == true {
+			Info.Printf("Transaction %s ID already spent (in mempool). Ignoring..\n", transactionId)
+			continue
+		}
+
+		txHash, err := chainhash.NewHashFromStr(transactionId)
+		if err != nil {
+			Error.Fatal(err)
+		}
+		op := wire.NewOutPoint(
+			txHash, uint32(idx),
+		)
+		outPoints = append(outPoints, op)
+		res += amount
+	}
+	return outPoints, res
 }
 
-func (k *KeyManager) PerformPurchase(address btcutil.Address, amount float64, dstAddress btcutil.Address) {
-    // Get all unspent transactions fot amount
-    inputs, totalSpent := k.Unspent(address.String(), amount)
-    totalSpent *= 100000000
-    amount *= 100000000
+func (k *KeyManager) PerformPurchase(address btcutil.Address, amount float64, dstAddress btcutil.Address) string {
+	// Get all unspent transactions fot amount
 
-    totalSpentInt := int64(totalSpent)
-    amountInt := int64(amount)
+	inputs, totalSpent := k.Unspent(address.String(), amount)
+	totalSpent *= 100000000
+	amount *= 100000000
 
-    // Create TXins
-    tx := wire.NewMsgTx()
-    for _, input := range inputs {
-        txIn := wire.NewTxIn(input, nil)
-        tx.AddTxIn(txIn)
-    }
+	totalSpentInt := int64(totalSpent)
+	amountInt := int64(amount)
 
-    // Create pay-to-addr script
-    pkScript, err := txscript.PayToAddrScript(dstAddress)
-    if err != nil {
-        Error.Fatal(err)
-    }
+	// Create TXins
+	tx := wire.NewMsgTx()
+	for _, input := range inputs {
+		txIn := wire.NewTxIn(input, nil)
+		tx.AddTxIn(txIn)
+	}
 
-    // Add transactions
-    txOut := wire.NewTxOut(amountInt, pkScript)
-    tx.AddTxOut(txOut)
+	// Create pay-to-addr script
+	pkScript, err := txscript.PayToAddrScript(dstAddress)
+	if err != nil {
+		Error.Fatal(err)
+	}
 
-    delta := totalSpentInt - amountInt
-    if delta > 0 {
-        changePkScript, err := txscript.PayToAddrScript(address)
-        if err != nil {
-            Error.Fatal(err)
-        }
-        changeTxOut := wire.NewTxOut(delta, changePkScript)
-        tx.AddTxOut(changeTxOut)
-    }
+	// Add transactions
+	Info.Println(amountInt)
+	amountInt -= int64(0.0001 * 100000000 * 5)
+	Info.Println(amountInt)
+	txOut := wire.NewTxOut(amountInt, pkScript)
+	tx.AddTxOut(txOut)
 
-    // Sign inputs
-    for _, txin := range tx.TxIn {
-        hash := txin.PreviousOutPoint.Hash
-        prevTx, _ := k.rpc.GetRawTransaction(&hash)
+	delta := totalSpentInt - amountInt - int64(0.0001*100000000*5)
+	if delta > 0 {
+		changePkScript, err := txscript.PayToAddrScript(address)
+		if err != nil {
+			Error.Fatal(err)
+		}
+		changeTxOut := wire.NewTxOut(delta, changePkScript)
+		tx.AddTxOut(changeTxOut)
+	}
 
-        sigScript, err := txscript.SignTxOutput(
-            &chaincfg.SimNetParams, tx, 0, prevTx.MsgTx().TxOut[0].PkScript,
-            txscript.SigHashAll, k, nil, nil,
-        )
-        if err != nil {
-            Error.Panic(err)
-        }
-        txin.SignatureScript = sigScript
-    }
+	// Sign inputs
+	for _, txin := range tx.TxIn {
+		hash := txin.PreviousOutPoint.Hash
+		prevTxIdx := int(txin.PreviousOutPoint.Index)
+		prevTx, _ := k.rpc.GetRawTransaction(&hash)
 
-    data := make([]byte, 0, tx.SerializeSize())
-    buf := bytes.NewBuffer(data)
-    tx.Serialize(buf)
-    Info.Println(hex.EncodeToString(buf.Bytes()))
+		sigScript, err := txscript.SignTxOutput(
+			&chaincfg.SimNetParams, tx, prevTxIdx,
+			prevTx.MsgTx().TxOut[prevTxIdx].PkScript,
+			txscript.SigHashAll, k, nil, nil,
+		)
+		if err != nil {
+			Error.Panic(err)
+		}
+		txin.SignatureScript = sigScript
+	}
+
+	// Serialize
+	datas := make([]byte, 0, tx.SerializeSize())
+	buffer := bytes.NewBuffer(datas)
+	tx.Serialize(buffer)
+
+	Info.Println(hex.EncodeToString(buffer.Bytes()))
+
+	// Send transaction
+	hash, err := k.rpc.SendRawTransaction(tx, true)
+	if err != nil {
+		Error.Fatal(err)
+	}
+
+	// We are successful, add spent transactions to seen set to avoid double spend
+	return hash.String()
 }
 
 func (k *KeyManager) GetKey(address btcutil.Address) (*btcec.PrivateKey, bool, error) {
-    if pk := k.addressMap[address.String()]; pk != nil {
-        return pk, true, nil
-    }
+	Info.Printf("Finding private key for address %s\n", address.String())
+	if pk := k.addressMap[address.String()]; pk != nil {
+		return pk, true, nil
+	}
 
-    return nil, false, errors.New("Could not find key")
+	return nil, false, errors.New("Could not find key")
 }
 
 func NewKeyManager(client *redis.Client, identifier uuid.UUID, dbs *gorm.DB, rpc *btcrpcclient.Client) *KeyManager {
@@ -263,7 +247,7 @@ func NewKeyManager(client *redis.Client, identifier uuid.UUID, dbs *gorm.DB, rpc
 		client:     client,
 		identifier: identifier,
 		dbs:        dbs,
-                rpc:        rpc,
-                addressMap: make(map[string]*btcec.PrivateKey),
+		rpc:        rpc,
+		addressMap: make(map[string]*btcec.PrivateKey),
 	}
 }

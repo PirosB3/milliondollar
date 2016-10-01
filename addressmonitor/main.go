@@ -73,6 +73,42 @@ func GetCurrentBlockCount() int64 {
 	return count
 }
 
+func OperateMempool() {
+	for {
+		results, err := RPCClient.GetRawMempool()
+		if err != nil {
+			Error.Panic(err)
+		}
+
+		for _, result := range results {
+			rawTx, err := RPCClient.GetRawTransaction(result)
+			if err != nil {
+				Error.Panic(err)
+			}
+			rawTxMsg := rawTx.MsgTx()
+
+			data := make([]byte, 0, rawTxMsg.SerializeSize())
+			buf := bytes.NewBuffer(data)
+			rawTxMsg.Serialize(buf)
+
+			_, err = RPCClient.DecodeRawTransaction(buf.Bytes())
+			if err != nil {
+				Error.Panic(err)
+			}
+
+			for _, input := range rawTxMsg.TxIn {
+
+				// Mark every input as spent for N * 2 seconds
+				hash := input.PreviousOutPoint.Hash.String()
+				client.Set("spent_tx_in_mempool:"+hash, "1", time.Second*7)
+				Info.Println("Added hash", hash, "to mempool")
+			}
+
+		}
+		time.Sleep(time.Second * 5)
+	}
+}
+
 func main() {
 	defer dbs.Close()
 	btcdHomeDir := btcutil.AppDataDir("btcd", false)
@@ -92,6 +128,8 @@ func main() {
 	if err != nil {
 		Error.Fatal(err)
 	}
+
+	go OperateMempool()
 
 	for {
 		currentBlock := GetCurrentBlockCount()

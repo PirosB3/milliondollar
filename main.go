@@ -7,7 +7,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -33,13 +35,14 @@ var (
 	RootPage         []byte
 	IndexRefreshLock sync.RWMutex
 	dbs              *gorm.DB
+	currentDirectory string
 )
 
 const (
 	KEY_1   = "QQByVLj7UQHXmiWiHdV17HQQVLQXUjyB"
 	KEY_2   = "HHQULVBjVXQHVQQX1LB7yLiWjHLQ7dH1QyijByUVVHVmQmXQiWijdUQQQU77ByXQ"
 	N_ADS   = 6
-	AD_COST = 2.0
+	AD_COST = 0.5
 )
 
 type UserDetails struct {
@@ -111,25 +114,27 @@ func TilePurchasehandler(w http.ResponseWriter, r *http.Request, details *UserDe
 	defer tileManager.PurchaseLock.Unlock()
 
 	// Ensure Tile was locked by current user
-	//canPurchase, err := tileManager.CanPurchase(data.FrameNumber, details.SessionId)
-	//if !canPurchase {
-		//return 400, map[string]string{
-			//"error": err.Error(),
-		//}
-	//}
+	canPurchase, err := tileManager.CanPurchase(data.FrameNumber, details.SessionId)
+	if !canPurchase {
+		return 400, map[string]string{
+			"error": err.Error(),
+		}
+	}
 
 	// Perform transaction
-        addrInstance, _ := btcutil.DecodeAddress(address, &chaincfg.SimNetParams)
-        details.Keys.PerformPurchase(addrInstance, 0.5, RootAddress)
+	addrInstance, _ := btcutil.DecodeAddress(address, &chaincfg.SimNetParams)
+	txid := details.Keys.PerformPurchase(addrInstance, 0.5, RootAddress)
 
 	// Set AD for 5 minutes
-	//tileManager.PurchaseTile(
-		//data.FrameNumber,
-		//data.Message,
-		//5*time.Minute,
-	//)
+	tileManager.PurchaseTile(
+		data.FrameNumber,
+		data.Message,
+		5*time.Minute,
+	)
 
-	return 200, ""
+	return 200, map[string]string{
+		"transaction_id": txid,
+	}
 }
 
 func TileLockHandler(w http.ResponseWriter, r *http.Request, details *UserDetails) {
@@ -262,6 +267,10 @@ func AddressesHandler(w http.ResponseWriter, r *http.Request, details *UserDetai
 }
 
 func init() {
+	// get current directory of file
+	_, filename, _, _ := runtime.Caller(1)
+	currentDirectory = path.Dir(filename)
+
 	secureCookie = securecookie.New(
 		[]byte(KEY_2),
 		[]byte(KEY_1),
@@ -284,9 +293,8 @@ func init() {
 }
 
 func refreshRootPage() error {
-	dir, _ := filepath.Abs(filepath.Dir(os.Args[0]))
 	var err error
-	RootPage, err = ioutil.ReadFile(dir + "/templates/index.html")
+	RootPage, err = ioutil.ReadFile(currentDirectory + "/templates/index.html")
 	return err
 }
 
@@ -327,19 +335,20 @@ func main() {
 	}
 
 	// Get Address for purchase
-	addressString := "14HnFMWGN7p2tqkwzdpQuYkFPT1DbpMjTu"
+	addressString := "ShAuZRrssopbEmmV5kx6PUUdQRrCLVLfG6"
 	RootAddress, err = btcutil.DecodeAddress(addressString, &chaincfg.SimNetParams)
 	if err != nil {
 		Error.Fatal(err)
 	}
 
 	// address router
+	Info.Println(currentDirectory)
 	r := mux.NewRouter()
 	r.HandleFunc("/addresses", AuthMiddleware(AddressesHandler)).Methods("GET")
 	r.HandleFunc("/tiles", AuthMiddleware(TileHandler)).Methods("GET")
 	r.HandleFunc("/tile", AuthMiddleware(TileLockHandler)).Methods("POST")
 	r.HandleFunc("/purchase", AuthMiddleware(ResponseByReturnHandler(TilePurchasehandler))).Methods("POST")
 	r.HandleFunc("/", RootHandler).Methods("GET")
-	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
+	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir(currentDirectory+"/static/"))))
 	Error.Fatal(http.ListenAndServe(":8000", r))
 }
