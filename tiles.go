@@ -15,10 +15,10 @@ const (
 )
 
 type TileManager struct {
-	NumTiles int
-	Client   *redis.Client
-	lock     sync.Mutex
-        PurchaseLock sync.Mutex
+	NumTiles     int
+	Client       *redis.Client
+	lock         sync.Mutex
+	PurchaseLock sync.Mutex
 }
 
 func NewTileManager(numTiles int, client *redis.Client) *TileManager {
@@ -28,7 +28,7 @@ func NewTileManager(numTiles int, client *redis.Client) *TileManager {
 	}
 }
 
-func (tm *TileManager) keyForBody(tile int) string {
+func (tm *TileManager) KeyForBody(tile int) string {
 	return "body:" + strconv.Itoa(tile)
 }
 
@@ -40,18 +40,18 @@ func (tm *TileManager) PurchaseTile(tile int, body string, duration time.Duratio
 	_, err := tm.Client.Set(
 		tm.keyForTile(tile), "PURCHASED", duration,
 	).Result()
-        if err != nil {
-            return err
-        }
+	if err != nil {
+		return err
+	}
 
 	_, err = tm.Client.Set(
-		tm.keyForBody(tile), body, duration,
+		tm.KeyForBody(tile), body, duration,
 	).Result()
-        if err != nil {
-            return err
-        }
+	if err != nil {
+		return err
+	}
 
-        return nil
+	return nil
 }
 
 func (tm *TileManager) Lock(tile int, duration time.Duration, locker uuid.UUID) (error, string) {
@@ -72,14 +72,14 @@ func (tm *TileManager) Lock(tile int, duration time.Duration, locker uuid.UUID) 
 	if val == true {
 		return nil, STATE_LOCKED_BY_CURRENT_USER
 	} else {
-                val2, _ := tm.Client.Get(tm.keyForTile(tile)).Result()
-                if val2 == "" {
-                    return nil, STATE_OPEN
-                } else if val2 == "PURCHASED" {
-                    return nil, STATE_PURCHASED
-                } else {
-                    return nil, STATE_LOCKED_BY_OTHER
-                }
+		val2, _ := tm.Client.Get(tm.keyForTile(tile)).Result()
+		if val2 == "" {
+			return nil, STATE_OPEN
+		} else if val2 == "PURCHASED" {
+			return nil, STATE_PURCHASED
+		} else {
+			return nil, STATE_LOCKED_BY_OTHER
+		}
 	}
 }
 
@@ -88,22 +88,22 @@ func (tm *TileManager) keyForTile(tile int) string {
 }
 
 func (tm *TileManager) CanPurchase(tile int, locker uuid.UUID) (bool, error) {
-    if tile >= tm.NumTiles {
-            return false, errors.New("This tile is not available")
-    }
+	if tile >= tm.NumTiles {
+		return false, errors.New("This tile is not available")
+	}
 
-    tileKey := tm.keyForTile(tile)
-    val, err := tm.Client.Get(tileKey).Result()
+	tileKey := tm.keyForTile(tile)
+	val, err := tm.Client.Get(tileKey).Result()
 
-    if err == redis.Nil {
-        return false, errors.New("Tile was never locked")
-    } else {
-        if val != locker.String() {
-            return false, errors.New("Tile was locked by someone else")
-        } else {
-            return true, nil
-        }
-    }
+	if err == redis.Nil {
+		return false, errors.New("Tile was never locked")
+	} else {
+		if val != locker.String() {
+			return false, errors.New("Tile was locked by someone else")
+		} else {
+			return true, nil
+		}
+	}
 }
 
 func (tm *TileManager) GetState(locker uuid.UUID) []string {
@@ -124,7 +124,7 @@ func (tm *TileManager) GetState(locker uuid.UUID) []string {
 			result[i] = STATE_LOCKED_BY_CURRENT_USER
 		} else if val == "PURCHASED" {
 			result[i] = STATE_PURCHASED
-                } else if val == "" {
+		} else if val == "" {
 			result[i] = STATE_OPEN
 		} else {
 			result[i] = STATE_LOCKED_BY_OTHER

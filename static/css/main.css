@@ -1,7 +1,92 @@
-body {
-  padding-top: 50px;
+.container {
+    margin-top: 70px;
 }
-.starter-template {
-  padding: 40px 15px;
-  text-align: center;
+
+.mast {
+    height: 275px;
+    border: 3px;
+    border-style: solid;
+    border-color: black;
+    margin-bottom: 40px;
+}
+
+.express {
+    height: 212px;
+    border-top: 0;
+    border-right: 0;
+    border-left: 3px;
+    border-bottom: 3px;
+    border-style: solid;
+    border-color: black;
+}
+
+.express h1 {
+    font-size: 35px;
+    margin-bottom: 30px;
+    margin-top: 20px;
+}
+
+.express ol {
+    padding-left: 10px;
+    font-size: 11px;
+}
+
+.btc-img {
+    height: 220px;
+    margin-left: 240px;
+    margin-top: 25px;
+}
+
+.tile {
+    height: 165px;
+    border: 3px;
+    border-style: solid;
+    border-color: black;
+}
+
+.tile .header {
+    background-color: black;
+    color: white;
+    height: 22px;
+    /*padding-left: 35px;*/
+}
+
+.tile .body {
+    font-size: 28px;
+    color: #f7931a;
+}
+
+.tile .body textarea {
+    width: 90%;
+    height: 136px;
+    border: none; 
+    resize: none;
+}
+
+.tile .body textarea:focus{
+    outline: none;
+}
+
+.tile .next-btn {
+    position: absolute;
+    right: 18px;
+    top: 85px;
+}
+
+.tile .next-btn.hide-text {
+    display: none;
+}
+
+.tile .body h3 {
+    font-size: 11px;
+}
+
+.tile .body.pending-tile h3 {
+    font-size: 20px;
+    color: #b2b2b2;
+}
+
+.tile .body.purchased-tile h3 {
+    font-size: 28px;
+    color: #f7931a;
 }
