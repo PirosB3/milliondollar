@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/btcsuite/btcrpcclient"
 	"github.com/btcsuite/btcutil"
 	"github.com/jinzhu/gorm"
@@ -100,7 +101,10 @@ func OperateMempool() {
 
 				// Mark every input as spent for N * 2 seconds
 				hash := input.PreviousOutPoint.Hash.String()
-				client.Set("spent_tx_in_mempool:"+hash, "1", time.Second*7)
+				idx := input.PreviousOutPoint.Index
+				client.Set(
+					fmt.Sprintf("spent_tx_in_mempool:%s:%d", hash, idx), "1", time.Second*7,
+				)
 				Info.Println("Added hash", hash, "to mempool")
 			}
 

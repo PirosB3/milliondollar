@@ -76,14 +76,18 @@ var Tile = React.createClass({
         }
     },
     componentWillReceiveProps: function(nextProps) {
-        clearInterval(this.state.timer);
-        if (nextProps.dataState == 'LOCKED_BY_CURRENT_USER') {
-            var timer = setInterval(this.checkAndPurchaseTile, 3000);
-            this.setState({timer: timer});
+        if (nextProps.dataState == 'LOCKED_BY_CURRENT_USER' && this.state.message.length > 0) {
+            if (!this.state.timer) {
+                var timer = setInterval(this.checkAndPurchaseTile, 2000);
+                console.log("TIMER: " + timer);
+                this.setState({timer: timer});
+                console.log("Created timer for tile " + this.props.idx)
+            }
         } else {
             if (this.state.timer) {
                 clearInterval(this.state.timer);
                 this.setState({timer: null});
+                console.log("Deleted timer for tile " + this.props.idx)
             }
         }
     },
