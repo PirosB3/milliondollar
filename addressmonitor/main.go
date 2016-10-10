@@ -169,8 +169,9 @@ func main() {
 				Error.Fatal(err)
 			}
 
-			txs := block.Transactions
-			for _, msgTx := range txs {
+			txs := block.Transactions()
+			for _, tk := range txs {
+				msgTx := tk.MsgTx()
 
 				data := make([]byte, 0, msgTx.SerializeSize())
 				buf := bytes.NewBuffer(data)
