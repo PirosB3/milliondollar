@@ -1,0 +1,26 @@
+package: milliondollar
+import:
+- package: github.com/btcsuite/btcd
+  subpackages:
+  - btcec
+  - chaincfg
+  - chaincfg/chainhash
+  - txscript
+  - wire
+- package: github.com/btcsuite/btcrpcclient
+- package: github.com/btcsuite/btcutil
+  subpackages:
+  - hdkeychain
+- package: github.com/gorilla/mux
+  version: v1.1
+- package: github.com/gorilla/securecookie
+  version: v1.1
+- package: github.com/jinzhu/gorm
+  version: v1.0
+  subpackages:
+  - dialects/postgres
+- package: github.com/satori/go.uuid
+  version: v1.1.0
+- package: github.com/spf13/viper
+- package: gopkg.in/redis.v4
+  version: v4.2.1

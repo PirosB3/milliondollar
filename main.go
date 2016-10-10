@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/user"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -21,6 +22,7 @@ import (
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/postgres"
 	"github.com/satori/go.uuid"
+	"github.com/spf13/viper"
 	"gopkg.in/redis.v4"
 )
 
@@ -31,18 +33,14 @@ var (
 	Info             *log.Logger
 	Error            *log.Logger
 	RPCClient        *btcrpcclient.Client
-	RootAddress      btcutil.Address
+	BankAddress      btcutil.Address
 	RootPage         []byte
 	IndexRefreshLock sync.RWMutex
 	dbs              *gorm.DB
 	currentDirectory string
-)
-
-const (
-	KEY_1   = "QQByVLj7UQHXmiWiHdV17HQQVLQXUjyB"
-	KEY_2   = "HHQULVBjVXQHVQQX1LB7yLiWjHLQ7dH1QyijByUVVHVmQmXQiWijdUQQQU77ByXQ"
-	N_ADS   = 6
-	AD_COST = 0.5
+	N_ADS            int
+	AD_COST          float64
+	bank             string
 )
 
 type UserDetails struct {
@@ -123,7 +121,7 @@ func TilePurchasehandler(w http.ResponseWriter, r *http.Request, details *UserDe
 
 	// Perform transaction
 	addrInstance, _ := btcutil.DecodeAddress(address, &chaincfg.SimNetParams)
-	txid := details.Keys.PerformPurchase(addrInstance, 0.5, RootAddress)
+	txid := details.Keys.PerformPurchase(addrInstance, 0.5, BankAddress)
 
 	// Set AD for 5 minutes
 	tileManager.PurchaseTile(
@@ -267,29 +265,65 @@ func AddressesHandler(w http.ResponseWriter, r *http.Request, details *UserDetai
 }
 
 func init() {
+	// Initialize loggers
+	Info = log.New(os.Stdout, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
+	Error = log.New(os.Stdout, "ERROR: ", log.Ldate|log.Ltime|log.Lshortfile)
+
 	// get current directory of file
 	_, filename, _, _ := runtime.Caller(1)
 	currentDirectory = path.Dir(filename)
 
-	secureCookie = securecookie.New(
-		[]byte(KEY_2),
-		[]byte(KEY_1),
-	)
-	client = redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
-	tileManager = NewTileManager(N_ADS, client)
-
-	Info = log.New(os.Stdout, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
-	Error = log.New(os.Stdout, "ERROR: ", log.Ldate|log.Ltime|log.Lshortfile)
-
-	var err error
-	dbs, err = gorm.Open("postgres", "host=localhost port=32768 user=postgres sslmode=disable")
+	// add configuration directory
+	viper.SetConfigName("app")
+	usr, _ := user.Current()
+	viper.AddConfigPath(filepath.Join(usr.HomeDir, ".mdp/"))
+	err := viper.ReadInConfig()
 	if err != nil {
 		Error.Fatal(err)
 	}
+	N_ADS = viper.GetInt("business.n_ads")
+	AD_COST = viper.GetFloat64("business.ad_cost")
+
+	// Initialize Cookies
+	secureCookie = securecookie.New(
+		[]byte(viper.GetString("cookie.key2")),
+		[]byte(viper.GetString("cookie.key1")),
+	)
+
+	// Initialize Redis
+	client = redis.NewClient(&redis.Options{
+		Addr:     viper.GetString("db.redis"),
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
+
+	// Initialize PG
+	dbs, err = gorm.Open("postgres", viper.GetString("db.pg"))
+	if err != nil {
+		Error.Fatal(err)
+	}
+
+	// Initialize BTCD
+	btcdHomeDir := btcutil.AppDataDir("btcd", false)
+	certs, err := ioutil.ReadFile(filepath.Join(btcdHomeDir, "rpc.cert"))
+	if err != nil {
+		Error.Fatal(err)
+	}
+	connCfg := &btcrpcclient.ConnConfig{
+		Host:         viper.GetString("db.btcd.host"),
+		Endpoint:     "ws",
+		User:         viper.GetString("db.btcd.username"),
+		Pass:         viper.GetString("db.btcd.password"),
+		Certificates: certs,
+	}
+	RPCClient, err = btcrpcclient.New(connCfg, nil)
+	if err != nil {
+		Error.Fatal(err)
+	}
+
+	// Init the tile manager and redeem adress
+	tileManager = NewTileManager(N_ADS, client)
+	bank = viper.GetString("business.bank")
 }
 
 func refreshRootPage() error {
@@ -312,31 +346,9 @@ func main() {
 		}
 	}()
 
-	btcdHomeDir := btcutil.AppDataDir("btcd", false)
-	certs, err := ioutil.ReadFile(filepath.Join(btcdHomeDir, "rpc.cert"))
-	if err != nil {
-		Error.Fatal(err)
-	}
-
-	connCfg := &btcrpcclient.ConnConfig{
-		Host:         "localhost:18556",
-		Endpoint:     "ws",
-		User:         "admin",
-		Pass:         "admin",
-		Certificates: certs,
-	}
-	RPCClient, err = btcrpcclient.New(connCfg, nil)
-	if err != nil {
-		Error.Fatal(err)
-	}
-
-	if err = RPCClient.NotifyBlocks(); err != nil {
-		Error.Fatal(err)
-	}
-
 	// Get Address for purchase
-	addressString := "ShAuZRrssopbEmmV5kx6PUUdQRrCLVLfG6"
-	RootAddress, err = btcutil.DecodeAddress(addressString, &chaincfg.SimNetParams)
+	var err error
+	BankAddress, err = btcutil.DecodeAddress(bank, &chaincfg.SimNetParams)
 	if err != nil {
 		Error.Fatal(err)
 	}

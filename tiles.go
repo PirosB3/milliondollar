@@ -33,6 +33,10 @@ func (tm *TileManager) KeyForBody(tile int) string {
 }
 
 func (tm *TileManager) PurchaseTile(tile int, body string, duration time.Duration) error {
+	if len(body) == 0 {
+		return errors.New("Body is empty, impossible to set")
+	}
+
 	if tile >= tm.NumTiles {
 		return errors.New("This tile is not available")
 	}

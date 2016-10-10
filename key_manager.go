@@ -1,5 +1,6 @@
 package main
 
+import "fmt"
 import "io"
 import "errors"
 import "io/ioutil"
@@ -47,21 +48,8 @@ func (k *KeyManager) GetAddressBalances(num int) []float64 {
 }
 
 func (k *KeyManager) GetBalanceForAddress(address string) float64 {
-	rows, err := k.dbs.Table("transactions").Select(
-		"sum(amount)",
-	).Where(
-		"address = ? AND spent = ?",
-		address, false,
-	).Rows()
-	if err != nil {
-		Error.Fatal(err)
-	}
-	defer rows.Close()
-
-	var balance float64
-	rows.Next()
-	rows.Scan(&balance)
-	return balance
+	_, total := k.Unspent(address, -1.0)
+	return total
 }
 
 func (k *KeyManager) MakeAddresses(num int) []string {
@@ -133,14 +121,14 @@ func (k *KeyManager) Unspent(address string, amount float64) ([]*wire.OutPoint, 
 
 	var res float64 = 0
 	var outPoints []*wire.OutPoint
-	for rows.Next() && res < amount {
+	for rows.Next() && (res < amount || amount == -1.0) {
 		var transactionId string
 		var idx int
 		var amount float64
 		rows.Scan(&transactionId, &idx, &amount)
 
 		// If transaction is in the mempool (spent) ignore.
-		key := "spent_tx_in_mempool:" + transactionId
+		key := fmt.Sprintf("spent_tx_in_mempool:%s:%d", transactionId, idx)
 		if res, _ := k.client.Exists(key).Result(); res == true {
 			Info.Printf("Transaction %s ID already spent (in mempool). Ignoring..\n", transactionId)
 			continue
@@ -200,16 +188,20 @@ func (k *KeyManager) PerformPurchase(address btcutil.Address, amount float64, ds
 	}
 
 	// Sign inputs
-	for _, txin := range tx.TxIn {
+	for idx, txin := range tx.TxIn {
 		hash := txin.PreviousOutPoint.Hash
 		prevTxIdx := int(txin.PreviousOutPoint.Index)
-		prevTx, _ := k.rpc.GetRawTransaction(&hash)
+		prevTx, err := k.rpc.GetRawTransaction(&hash)
+		if err != nil {
+			Error.Panic(err)
+		}
 
 		sigScript, err := txscript.SignTxOutput(
-			&chaincfg.SimNetParams, tx, prevTxIdx,
+			&chaincfg.SimNetParams, tx, idx,
 			prevTx.MsgTx().TxOut[prevTxIdx].PkScript,
 			txscript.SigHashAll, k, nil, nil,
 		)
+		Info.Println(string(sigScript))
 		if err != nil {
 			Error.Panic(err)
 		}
