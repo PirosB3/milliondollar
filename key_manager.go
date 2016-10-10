@@ -62,7 +62,7 @@ func (k *KeyManager) MakeAddresses(num int) []string {
 	pkeys := make([]string, num)
 	for i := 0; i < num; i++ {
 		acct, _ := chain.Child(uint32(i))
-		addr, _ := acct.Address(&chaincfg.SimNetParams)
+		addr, _ := acct.Address(k.params)
 		pkeys[i] = addr.EncodeAddress()
 		privKey, _ := acct.ECPrivKey()
 		k.addressMap[pkeys[i]] = privKey
@@ -78,7 +78,7 @@ func (k *KeyManager) GetChain() (*hdkeychain.ExtendedKey, error) {
 		return nil, err
 	}
 
-	ek, err := hdkeychain.NewMaster(masterKeyByteSlice, &chaincfg.SimNetParams)
+	ek, err := hdkeychain.NewMaster(masterKeyByteSlice, k.params)
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +198,7 @@ func (k *KeyManager) PerformPurchase(address btcutil.Address, amount float64, ds
 		}
 
 		sigScript, err := txscript.SignTxOutput(
-			&chaincfg.SimNetParams, tx, idx,
+			k.params, tx, idx,
 			prevTx.MsgTx().TxOut[prevTxIdx].PkScript,
 			txscript.SigHashAll, k, nil, nil,
 		)
