@@ -3,17 +3,20 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
+	"log"
+	"os"
+	"os/user"
+	"path/filepath"
+	"strconv"
+	"time"
+
 	"github.com/btcsuite/btcrpcclient"
 	"github.com/btcsuite/btcutil"
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/postgres"
+	"github.com/spf13/viper"
 	"gopkg.in/redis.v4"
-	"io/ioutil"
-	"log"
-	"os"
-	"path/filepath"
-	"strconv"
-	"time"
 )
 
 var (
@@ -35,20 +38,47 @@ type Transaction struct {
 }
 
 func init() {
-	var err error
-	dbs, err = gorm.Open("postgres", "host=localhost port=32768 user=postgres sslmode=disable")
+	Info = log.New(os.Stdout, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
+	Error = log.New(os.Stdout, "ERROR: ", log.Ldate|log.Ltime|log.Lshortfile)
+
+	// add configuration directory
+	viper.SetConfigName("app")
+	usr, _ := user.Current()
+	viper.AddConfigPath(filepath.Join(usr.HomeDir, ".mdp/"))
+	err := viper.ReadInConfig()
+	if err != nil {
+		Error.Fatal(err)
+	}
+
+	dbs, err = gorm.Open("postgres", viper.GetString("db.pg"))
 	if err != nil {
 		Error.Fatal(err)
 	}
 	dbs.AutoMigrate(&Transaction{})
 
 	client = redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
+		Addr:     viper.GetString("db.redis"),
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
-	Info = log.New(os.Stdout, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
-	Error = log.New(os.Stdout, "ERROR: ", log.Ldate|log.Ltime|log.Lshortfile)
+
+	btcdHomeDir := btcutil.AppDataDir("btcd", false)
+	certs, err := ioutil.ReadFile(filepath.Join(btcdHomeDir, "rpc.cert"))
+	if err != nil {
+		Error.Fatal(err)
+	}
+
+	connCfg := &btcrpcclient.ConnConfig{
+		Host:         viper.GetString("db.btcd.host"),
+		Endpoint:     "ws",
+		User:         viper.GetString("db.btcd.username"),
+		Pass:         viper.GetString("db.btcd.password"),
+		Certificates: certs,
+	}
+	RPCClient, err = btcrpcclient.New(connCfg, nil)
+	if err != nil {
+		Error.Fatal(err)
+	}
 }
 
 func GetLastSyncedBlock() int64 {
@@ -114,24 +144,6 @@ func OperateMempool() {
 }
 
 func main() {
-	defer dbs.Close()
-	btcdHomeDir := btcutil.AppDataDir("btcd", false)
-	certs, err := ioutil.ReadFile(filepath.Join(btcdHomeDir, "rpc.cert"))
-	if err != nil {
-		Error.Fatal(err)
-	}
-
-	connCfg := &btcrpcclient.ConnConfig{
-		Host:         "localhost:18556",
-		Endpoint:     "ws",
-		User:         "admin",
-		Pass:         "admin",
-		Certificates: certs,
-	}
-	RPCClient, err = btcrpcclient.New(connCfg, nil)
-	if err != nil {
-		Error.Fatal(err)
-	}
 
 	go OperateMempool()
 
