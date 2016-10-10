@@ -36,6 +36,7 @@ type KeyManager struct {
 	rpc        *btcrpcclient.Client
 	identifier uuid.UUID
 	addressMap map[string]*btcec.PrivateKey
+	params     *chaincfg.Params
 }
 
 func (k *KeyManager) GetAddressBalances(num int) []float64 {
@@ -234,12 +235,13 @@ func (k *KeyManager) GetKey(address btcutil.Address) (*btcec.PrivateKey, bool, e
 	return nil, false, errors.New("Could not find key")
 }
 
-func NewKeyManager(client *redis.Client, identifier uuid.UUID, dbs *gorm.DB, rpc *btcrpcclient.Client) *KeyManager {
+func NewKeyManager(client *redis.Client, identifier uuid.UUID, dbs *gorm.DB, rpc *btcrpcclient.Client, params *chaincfg.Params) *KeyManager {
 	return &KeyManager{
 		client:     client,
 		identifier: identifier,
 		dbs:        dbs,
 		rpc:        rpc,
 		addressMap: make(map[string]*btcec.PrivateKey),
+		params:     params,
 	}
 }

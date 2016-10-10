@@ -41,6 +41,7 @@ var (
 	N_ADS            int
 	AD_COST          float64
 	bank             string
+	net              *chaincfg.Params
 )
 
 type UserDetails struct {
@@ -120,7 +121,7 @@ func TilePurchasehandler(w http.ResponseWriter, r *http.Request, details *UserDe
 	}
 
 	// Perform transaction
-	addrInstance, _ := btcutil.DecodeAddress(address, &chaincfg.SimNetParams)
+	addrInstance, _ := btcutil.DecodeAddress(address, net)
 	txid := details.Keys.PerformPurchase(addrInstance, 0.5, BankAddress)
 
 	// Set AD for 5 minutes
@@ -234,7 +235,7 @@ func AuthMiddleware(fn func(http.ResponseWriter, *http.Request, *UserDetails)) f
 				Error.Fatal(err)
 			}
 		}
-		manager := NewKeyManager(client, uniqueIdentifier, dbs, RPCClient)
+		manager := NewKeyManager(client, uniqueIdentifier, dbs, RPCClient, net)
 		details := &UserDetails{
 			SessionId: uniqueIdentifier,
 			Keys:      manager,
@@ -324,6 +325,15 @@ func init() {
 	// Init the tile manager and redeem adress
 	tileManager = NewTileManager(N_ADS, client)
 	bank = viper.GetString("business.bank")
+
+	// Get params
+	if viper.GetBool("db.btcd.is_simnet") {
+		Info.Println("Using SimNet")
+		net = &chaincfg.SimNetParams
+	} else {
+		Info.Println("Using MainNet")
+		net = &chaincfg.MainNetParams
+	}
 }
 
 func refreshRootPage() error {
@@ -348,7 +358,7 @@ func main() {
 
 	// Get Address for purchase
 	var err error
-	BankAddress, err = btcutil.DecodeAddress(bank, &chaincfg.SimNetParams)
+	BankAddress, err = btcutil.DecodeAddress(bank, net)
 	if err != nil {
 		Error.Fatal(err)
 	}
