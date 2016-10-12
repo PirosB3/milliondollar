@@ -40,6 +40,7 @@ var (
 	currentDirectory string
 	N_ADS            int
 	AD_COST          float64
+	AD_TTL_MINS      int
 	bank             string
 	net              *chaincfg.Params
 )
@@ -140,7 +141,7 @@ func TilePurchasehandler(w http.ResponseWriter, r *http.Request, details *UserDe
 	tileManager.PurchaseTile(
 		data.FrameNumber,
 		data.Message,
-		5*time.Minute,
+		AD_TTL_MINS*time.Minute,
 	)
 
 	return 200, map[string]string{
@@ -296,6 +297,7 @@ func init() {
 	}
 	N_ADS = viper.GetInt("business.n_ads")
 	AD_COST = viper.GetFloat64("business.ad_cost")
+	AD_TTL_MINS = viper.GetInt("business.ad_ttl_mins")
 
 	// Initialize Cookies
 	secureCookie = securecookie.New(

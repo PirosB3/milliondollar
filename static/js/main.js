@@ -179,7 +179,6 @@ var MainComponent = React.createClass({
           self.setState({
               addresses: a[0],
               tiles: b[0],
-              balance: a[0][0].balance,
           });
       });
   },
@@ -205,7 +204,7 @@ var MainComponent = React.createClass({
   render: function() {
     var tiles = [];
     for (var i=0; i < this.state.addresses.length; i++) {
-        var balance = this.state.balance;
+        var balance = this.state.addresses[i].balance;
         var address = this.state.addresses[i].address;
         var tileData = this.state.tiles[i];
         var tile = (
