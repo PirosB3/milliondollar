@@ -134,7 +134,7 @@ func TilePurchasehandler(w http.ResponseWriter, r *http.Request, details *UserDe
 
 	// Perform transaction
 	addrInstance, _ := btcutil.DecodeAddress(address, net)
-	txid := details.Keys.PerformPurchase(addrInstance, 0.5, BankAddress)
+	txid := details.Keys.PerformPurchase(addrInstance, AD_COST, BankAddress)
 
 	// Set AD for 5 minutes
 	tileManager.PurchaseTile(
