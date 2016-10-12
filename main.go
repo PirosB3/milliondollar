@@ -63,6 +63,18 @@ type TilePurchaseHandlerPayload struct {
 	Message     string `json:"message"`
 }
 
+type PriceHandlerPayload struct {
+	Price float64 `json:"price"`
+}
+
+func PriceMiddleware(w http.ResponseWriter, r *http.Request) {
+	p := &PriceHandlerPayload{
+		Price: AD_COST,
+	}
+	encoder := json.NewEncoder(w)
+	encoder.Encode(p)
+}
+
 func RootHandler(w http.ResponseWriter, r *http.Request) {
 	IndexRefreshLock.RLock()
 	reader := bytes.NewReader(RootPage)
@@ -366,6 +378,7 @@ func main() {
 	// address router
 	Info.Println(currentDirectory)
 	r := mux.NewRouter()
+	r.HandleFunc("/price", PriceMiddleware).Methods("GET")
 	r.HandleFunc("/addresses", AuthMiddleware(AddressesHandler)).Methods("GET")
 	r.HandleFunc("/tiles", AuthMiddleware(TileHandler)).Methods("GET")
 	r.HandleFunc("/tile", AuthMiddleware(TileLockHandler)).Methods("POST")
