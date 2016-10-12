@@ -65,7 +65,7 @@ var Tile = React.createClass({
     },
     checkAndPurchaseTile: function() {
         var isCorrectTile = this.props.dataState == 'LOCKED_BY_CURRENT_USER';
-        var balanceSuccessful = this.props.balance > 0.5;
+        var balanceSuccessful = this.props.balance >= this.props.price;
         if (isCorrectTile && balanceSuccessful) {
             $.post("/purchase", JSON.stringify({
                 "frame_number": this.props.idx,
@@ -189,6 +189,10 @@ var MainComponent = React.createClass({
       setInterval(function() {
           self.reloadAddresses();
       }, 3000);
+
+      $.getJSON('/price').then(function(res) {
+          self.setState({'price': res.price});
+      });
   },
   lockTable: function(idx) {
       var self = this;
@@ -207,6 +211,7 @@ var MainComponent = React.createClass({
         var tile = (
             <div key={i} className="col-md-2 col-sm-2">
                 <Tile
+                 price={this.state.price}
                  idx={i}
                  onArrowClicked={this.lockTable}
                  dataState={tileData.state}
