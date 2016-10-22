@@ -7,7 +7,7 @@ var Timer = React.createClass({
     },
     onTick: function() {
         this.setState({
-            secs: this.state.secs - 1
+            secs: Math.max(this.state.secs - 1, 0)
         });
     },
     componentDidMount: function() {
