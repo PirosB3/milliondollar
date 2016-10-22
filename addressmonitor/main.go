@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcrpcclient"
 	"github.com/btcsuite/btcutil"
 	"github.com/jinzhu/gorm"
@@ -105,6 +106,7 @@ func GetCurrentBlockCount() int64 {
 }
 
 func OperateMempool() {
+	failCount := make(map[*chainhash.Hash]int)
 	for {
 		results, err := RPCClient.GetRawMempool()
 		if err != nil {
@@ -114,7 +116,18 @@ func OperateMempool() {
 		for _, result := range results {
 			rawTx, err := RPCClient.GetRawTransaction(result)
 			if err != nil {
-				Error.Panic(err)
+				if val, ok := failCount[result]; ok {
+					if val >= 2 {
+						Error.Panic(err)
+					} else {
+						failCount[result] += 1
+					}
+				} else {
+					failCount[result] = 0
+				}
+				Error.Println("Hash", result, "has failed", failCount[result], "times")
+			} else {
+				delete(failCount, result)
 			}
 			rawTxMsg := rawTx.MsgTx()
 
