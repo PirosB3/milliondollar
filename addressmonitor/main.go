@@ -126,6 +126,7 @@ func OperateMempool() {
 					failCount[result] = 0
 				}
 				Error.Println("Hash", result, "has failed", failCount[result], "times")
+				continue
 			} else {
 				delete(failCount, result)
 			}
